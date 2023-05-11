@@ -1,0 +1,12 @@
+{0 Typegist {%html: <span class="version">%%VERSION%%</span>%}}
+
+Typegist represents the essence of OCaml types as values. This dynamic
+type representation can be used to devise generic type-indexed
+functions – value printers, parsers, differs, generators, editors, ffi
+etc.
+
+Consult the {{!quick}quick start}.
+
+{1:lib_typegist Library [typegist]}
+
+{!modules: Typegist}
