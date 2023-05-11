@@ -1,0 +1,29 @@
+{0 Typegist Quick start}
+
+The library is unstable and the quick start remains todo, for now
+there are just a few {{!examples}examples} and
+a generic {{!function_template}function template} for processing type gists.
+
+{1:describing Describing your types}
+
+{b TODO}
+{ul
+{- Show simple examples of each structures. Make it principled, define
+   first the contructor, then the projector, then the dimensions etc.}
+{- Show how to write recursion properly}
+{- Show how to use metadata with {!Typegist.Fun.Generic.pp} or
+   to specify the range of scalars (e.g. for random generation)}
+{- Show how to hide GADT witnesses.}
+{- Notes on polymorphism and first-order kind.}}
+
+{1:using Processing the description}
+
+{b TODO}
+{ul
+{- Devise something consuming values}
+{- Show how to create and process metadata}
+{- Devise something producing values (e.g. deriving a [Cmdliner] term)}
+{- Show how specialisations can be easily generalized
+  (e.g. {!Typegist.Type.Gist.Sum.to_variant}).}}
+
+{1:examples Examples}

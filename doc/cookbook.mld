@@ -1,0 +1,283 @@
+{0 [Typegist] cookbook}
+
+A few conventions and recipes to describe your types with {!Typegist.Type.Gist}.
+
+{1:conventions Conventions}
+
+Given an OCaml type [t] is type gist should be called [t_typegist]. If your
+type follows the [M.t] convention use [M.typegist].
+
+{1:describing_records Describing records}
+
+An OCaml record is {{!Typegist.Type.Gist.record_ops}described} by
+naming a product of {{!Typegist.Type.Gist.field}named fields} with
+{!Typegist.Type.Gist.record}.
+
+{[
+module Person = struct
+  type t = { name : string; age : int option }
+  let make name age = { name; age }
+  let name p = p.name
+  let age p = p.age
+
+  open Typegist
+
+  let gist =
+    let name = Type.Gist.(field "name" string) name in
+    let age = Type.Gist.(field "age" (option int)) age in
+    Type.Gist.(record "person" @@ ctor make * name * age)
+
+  let pp = Fun.Generic.pp gist
+end
+]}
+
+{1:describing_variants Describing variants}
+
+An OCaml variant is {{!Typegist.Type.Gist.variant_ops}described} by a
+list of cases and a function that indicates how to select the case for
+a value.
+
+{2:enumerations Simple variant}
+
+A blueprint for an enumeration.
+
+{[
+module Status = struct
+  type t = Todo | Done | Cancelled
+
+  open Typegist
+
+  let gist =
+    let todo = Type.Gist.(case "Todo" @@ ctor Todo) in
+    let done' = Type.Gist.(case "Done" @@ ctor Done) in
+    let cancelled = Type.Gist.(case "Done" @@ ctor Cancelled) in
+    let project = function
+    | Todo -> todo | Done -> done' | Cancelled -> cancelled
+    in
+    let cases = [todo; done'; cancelled] in
+    Type.Gist.variant "Status.t" project cases
+
+  let pp = Fun.Generic.pp gist
+end
+]}
+
+{2:simple Simple variants}
+
+{2:variants_special Special cases}
+
+{2:gatds GADT witness hiding}
+
+For GADTs we need to cheat a little bit. When trying to describe it as
+a variant we can't type the case list since each case has another type
+witness. We can however define an existential for the GADT and
+describe it as if it was a regular variant.
+
+{[
+module M = struct
+  type 'a t =
+  | Int : int t
+  | Float : float t
+  | Pair : 'a t * 'b t -> ('a * 'b) t
+
+  type e = E : 'a t -> e (* We need to hide the witness. *)
+
+  let type_gist : e Type.Gist.t =
+    let rec g = lazy begin
+      let g = Type.Gist.rec' g in
+      let int_case = Type.Gist.(case "Int" @@ ctor (E Int)) in
+      let float_case = Type.Gist.(case "Float" @@ ctor (E Float)) in
+      let pair_ctor (E a) (E b) = E (Pair (a, b)) in
+      let pair_lproj = function E Pair (a, _) -> E a | _ -> assert false in
+      let pair_rproj = function E Pair (_, b) -> E b | _ -> assert false in
+      let pair_ldim = Type.Gist.dim g pair_lproj in
+      let pair_rdim = Type.Gist.dim g pair_rproj in
+      let pair_prod = Type.Gist.(ctor pair_ctor * pair_ldim * pair_rdim) in
+      let pair_case = Type.Gist.case "Pair" pair_prod in
+      let t_proj : type a. e -> e Type.Gist.Variant.case = function
+      | E Int -> int_case | E Float -> float_case | E (Pair _) -> pair_case
+      in
+      let cases = [int_case; float_case; pair_case] in
+      Type.Gist.variant "_ M.t" t_proj cases
+    end
+    in
+    Lazy.force g
+end
+]}
+
+{1:variants Describing recursive types}
+
+This example shows variants and recursive types via a simple binary
+tree.
+
+{[
+module Btree : sig
+  type 'a t = Empty | Node of 'a t * 'a * 'a t
+  val type_gist : 'a Type.Gist.t -> 'a t Type.Gist.t
+  val pp : 'a Type.Gist.t -> Format.formatter -> 'a t -> unit
+end = struct
+  type 'a t = Empty | Node of 'a t * 'a * 'a t
+  let type_gist gel =
+    let rec g = lazy begin
+      let g = Type.Gist.rec' g in
+      let empty_case = Type.Gist.(case "Empty" @@ ctor Empty) in
+      let node_ctor l v r = Node (l, v, r) in
+      let node_lproj = function Node (l, _, _) -> l | _ -> assert false in
+      let node_eproj = function Node (_, v, _) -> v | _ -> assert false in
+      let node_rproj = function Node (_, _, r) -> r | _ -> assert false in
+      let node_ldim = Type.Gist.(dim g node_lproj) in
+      let node_edim = Type.Gist.(dim gel node_eproj) in
+      let node_rdim = Type.Gist.(dim g node_rproj) in
+      let node_case =
+        Type.Gist.case "Node" @@
+        Type.Gist.(ctor node_ctor * node_ldim * node_edim * node_rdim)
+      in
+      let t_proj = function Empty -> empty_case | Node _ -> node_case in
+      Type.Gist.variant "Btree.t" t_proj [empty_case; node_case]
+    end
+    in
+    Lazy.force g
+
+  let pp elt = Fun.Generic.pp (type_gist elt)
+end
+]}
+
+{2:mutual Mutual recursion}
+
+Arbitrary mutual recursion is easily supported. Shown here between two types.
+
+{[
+let module M = struct
+  type one = One | To_two of two
+  and two = Two | To_one of one
+
+  let type_gist_one, type_gist_two =
+    let rec gone = lazy begin
+      let gtwo = Type.Gist.rec' gtwo in
+      let one_case = Type.Gist.(case "One" @@ ctor One) in
+      let to_two_ctor t = To_two t in
+      let to_two_proj = function To_two v -> v | _ -> assert false in
+      let to_two_dim = Type.Gist.(dim gtwo to_two_proj) in
+      let to_two_prod = Type.Gist.(ctor to_two_ctor * to_two_dim) in
+      let to_two_case = Type.Gist.case "To_two" to_two_prod in
+      let one_proj = function One -> one_case | To_two _ -> to_two_case in
+      Type.Gist.variant "M.one" one_proj [one_case; to_two_case]
+      end
+    and gtwo = lazy begin
+      let gone = Type.Gist.rec' gone in
+      let two_case = Type.Gist.(case "Two" @@ ctor Two) in
+      let to_one_ctor t = To_one t in
+      let to_one_proj = function To_one v -> v | _ -> assert false in
+      let to_one_dim = Type.Gist.(dim gone to_one_proj) in
+      let to_one_prod = Type.Gist.(ctor to_one_ctor * to_one_dim) in
+      let to_one_case = Type.Gist.(case "To_one" @@ to_one_prod) in
+      let two_proj = function Two -> two_case | To_one _ -> to_one_case in
+      Type.Gist.variant "M.two" two_proj [two_case; to_one_case]
+    end
+    in
+    (Lazy.force gone), (Lazy.force gtwo)
+end
+]}
+
+{1:describing_parametric_types Describing parametric types}
+
+{1:versioning Abstract types and versioning}
+
+This example shows records and abstract type public representation versioning.
+
+{[
+module Person : sig
+  type t
+  val v : string -> string -> string option -> t
+  val name : t -> string
+  val email : t -> string
+  val phone : t -> string option
+  val gist : t Type.Gist.t
+  val pp : Format.formatter -> t -> unit
+end = struct
+  type t = { name : string; email : string; phone : string option }
+  let v name email phone = { name; email; phone }
+  let name p = p.name
+  let email p = p.email
+  let phone p = p.phone
+  let type_gist =
+    let name = Type.Gist.(field "name" string name) in
+    let email = Type.Gist.(field "email" string email) in
+    let phone = Type.Gist.(field "phone" (option string) phone) in
+    let repr_v0 = (* First version had no phone numbers *)
+      let to_v1 name email = { name; email; phone = None } in
+      let g = Type.Gist.(record "person" @@ ctor to_v1 * name * email) in
+      Type.Gist.Abstract.repr ~version:"v0" g Fun.id Fun.id
+    in
+    let repr_v1 = (* Added phone numbers *)
+      let g = Type.Gist.(record "person" @@ ctor v * name * email * phone) in
+      Type.Gist.Abstract.repr ~version:"v1" g Fun.id Fun.id
+    in
+    Type.Gist.abstract "person" ~reprs:[repr_v1; repr_v0]
+
+  let pp = Fun.Generic.pp type_gist
+end
+]}
+
+{1:writing_generic Writing a generic function}
+
+The following is a function template for processing two values by
+following their gists.
+
+Since the types need to be spelled out because of the GADT it is usually a
+good idea to define a type for the function you are defining. That's the
+purpose of the ['a t] below which takes two values and returns [unit]
+you likely want to adjust that.
+
+The implementation of the functions in {!Typegist.Fun.Generic} can
+also serve as simple examples.
+
+{[
+module Generic_binary_fun = struct
+  type 'a t = 'a -> 'a -> unit
+
+  let rec fun_scalar : type a. a Type.Gist.scalar -> a t = fun s v0 v1 ->
+    failwith "TODO"
+
+  and fun_arraylike :
+    type elt arr. (elt, arr) Type.Gist.arraylike -> arr t = fun a v0 v1 ->
+    failwith "TODO"
+
+  and fun_maplike :
+    type k v m. (k, v, m) Type.Gist.maplike -> m t = fun m v0 v1 ->
+    failwith "TODO"
+
+  and fun_product : type p. p Type.Gist.product -> p t = fun p v0 v1 ->
+    failwith "TODO"
+
+  and fun_record : type r. r Type.Gist.record -> r t = fun r v0 v1 ->
+    failwith "TODO"
+
+  and fun_sum : type s. s Type.Gist.sum -> s t = fun s v0 v1 ->
+    failwith "TODO"
+
+  and fun_func :
+    type d r. (d, r) Type.Gist.func -> (d -> r) t = fun f v0 v1 ->
+    failwith "TODO"
+
+  and fun_abstract :
+    type a. a Type.Gist.abstract -> a t = fun a v0 v1 ->
+    failwith "TODO"
+
+  and fun_gist : type a. a Type.Gist.t -> a t = fun g v0 v1 -> match g with
+  | Scalar s -> fun_scalar s v0 v1
+  | Arraylike a -> fun_arraylike a v0 v1
+  | Maplike m -> fun_maplike m v0 v1
+  | Product p -> fun_product p v0 v1
+  | Record r -> fun_record r v0 v1
+  | Sum s -> fun_sum s v0 v1
+  | Func f -> fun_func f v0 v1
+  | Abstract a -> fun_abstract a v0 v1
+  | Lazy (_, g) -> fun_gist g (Lazy.force v0) (Lazy.force v1)
+  | Ref (_, g) -> fun_gist g !v0 !v1
+  | Rec g -> fun_gist (Lazy.force g) v0 v1
+end
+]}
+
+{2:meta Defining processing metadata}
+
+If your generic function needs additional metadata.

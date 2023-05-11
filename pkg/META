@@ -1,0 +1,7 @@
+description = "Represent the essence of OCaml types as values"
+version = "%%VERSION_NUM%%"
+requires = ""
+archive(byte) = "typegist.cma"
+archive(native) = "typegist.cmxa"
+plugin(byte) = "typegist.cma"
+plugin(native) = "typegist.cmxs"

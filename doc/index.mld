@@ -1,0 +1,26 @@
+{0 Typegist {%html: <span class="version">%%VERSION%%</span>%}}
+
+Typegist represents the essence of OCaml types as values. This dynamic
+type representation can be used to devise generic type-indexed
+functions – value printers, parsers, differs, generators, editors, ffi
+etc.
+
+{1:manual Manuals}
+
+The following manuals are available:
+
+{ul
+{- The {{!page-quick}quick start} should do so.}
+{- The {{!page-cookbook}Typegist cookbook} has a few conventions
+   and gist definition recipes.}
+{- The {{!page-notes}design notes} explains design choices made by
+   the library.}}
+
+{1:lib_typegist Library [typegist]}
+
+This library has the type gist definition as an extension of the
+{!Stdlib.Type} module and provides generic functions in an extended
+{!Stdlib.Fun} module.
+
+{!modules: Typegist}
+{!modules: Typegist.Type.Gist Typegist.Fun.Generic}

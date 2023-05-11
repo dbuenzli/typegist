@@ -1,0 +1,147 @@
+{0 [typegist] design notes}
+
+The type representation is similar to
+{{:https://arxiv.org/abs/1812.11665}Balestrieri et al.'s} low level
+view (§2.3.4). However the representation is not extensible, a few
+case are dropped, some representations are unified, some
+specializations are added.
+
+Here are a few salient points:
+
+{ul
+{- Products, records and variant (cases) are distinguished at the
+   toplevel but they all share a single representation: a {e product
+   of fields representation}. This economical uniformity benefits
+   both processors and the programmer's mind.}
+{- The {{!Typegist.Type.Gist.product_ops}product of fields
+   representation} does not go through tuples, it stores a
+   deconstruction of the type into its (ordered) fields and a
+   constructor to recreate it from its fields. Thus rather than
+   providing conversion to/from a multi-dimensional tuple, the user
+   provides field projectors and a constructor that creates values
+   from the fields. This representation is rather natural and easy to
+   explain. It's a good fit for abstract records since APIs usually
+   already provide a constructor and field accessors.  It is however
+   more painful for variant cases which are usually deconstructed via
+   pattern matching, having a quick way of devising these projectors
+   would be useful.}
+{- The {{!Typegist.Type.Gist.abstract_ops}representation of abstract
+   types} can expose more than one public representation (or
+   none). Public representations have a version label which allows to
+   interact with systems still using the previous representation.}
+{- The {{!Typegist.Type.Gist.variant_ops}representation of
+   variants} is different from Balestrieri et al. Each variant
+   case is a product of fields named after the constructor. We
+   store an ordered list of cases and one function that returns a
+   case given a value (rather than one function per case that
+   tests if a value has the case).}
+{- The representation is decorated with
+   {{!Typegist.Type.Gist.Meta}type-indexed existential metadata}.
+   This allows generic functions to be customized and extended
+   (see for example
+   the keys in {!Typegist.Fun.Generic.Meta} for the functions in
+   {!Typegist.Fun.Generic}). We use the type level defunctionalization of
+   {{:https://www.cl.cam.ac.uk/~jdy22/papers/lightweight-higher-kinded-polymorphism.pdf}Yallop et al.} to allow metadata values to depend on the
+   type of represented values. One open question is where exactly
+   to place the metadata, see the {{!todo}TODO}.}
+{- Balance between specialisation and generalisation. We have
+   a few cases that represent OCaml types directly. For example
+   {!Type.Gist.sum}, has one case for arbitrary variants and other
+   cases for common Stdlib variant types like lists. If there's no
+   interest in the specialisation a generic view can easily be obtained
+   with {!Typegist.Type.Gist.Sum.to_variant}. Similar schemes are provided
+   by {!Typegist.Type.Gist.maplike}, {!Typegist.Type.Gist.arraylike}.
+   Scalar values are all grouped under {!Typegist.Type.Gist.scalar} for which
+   a few generic operations are provided in
+   {!Typegist.Type.Gist.module-Scalar}.}
+{- The representation is a closed variant. Not really convinced
+   by this aspect of the design in Balestrieri et al. Extensibility
+   creeps into all processor which need an optional argument for dealing
+   with extensions and entail runtime errors on unsupported extensions.
+   Breaking at compile time the rare times a case will really need to be
+   added seems a better course of action.}}
+
+{1:todo TODO}
+
+    {ul
+    {- [Meta] placement. Must be nailed down before any release.
+       See {{!meta_placement}this section}.}
+    {- For now we just have one dimensional bigarrays as arrays. Should we have
+       the other dimensions, or just Genarray ? Where should we put it
+       from a generic point of view ? {!Type.Gist.arraylike} is decidely 1D.
+       A few alternatives:
+       {ol
+       {- One case for [Array1] and one case for [Genarray].
+          and {!Type.Gist.Arraylike.to_array_module} reshapes [Genarray]
+          to [Array1]}
+       {- Only a [Genarray] case and {!Type.Gist.Arraylike.to_array_module}
+          reshapes [Genarray] to [Array1]}
+       {- Only [Array1] (what we have now) except we add an [int array]
+          that has the dimensions of a Genarray from which it was reshaped}}}
+    {- Arraylike. Distinguish mutability ? More convenience for
+       construction ?}
+    {- Maplike, is possible to have a direct case for [Map] ? I doubt
+       (no way to capture the module argument [Ord] as a parameter
+       when writing the type [Map.Make(Ord).t]). The current scheme
+       requires a functor application to embed a map. It's quite ugly.}
+    {- Setlike ?}
+    {- Add a standard error mecanism to allow abstract representations to
+       only partially map (just having options is obscure).}
+    {- Except for the variants the representation types are kept abstract.
+       This entails however a loss of polymorphism for empty variant cases.
+       In the Gist module itself we can have a polymorphic description of [None]
+       we can't with [Type.Gist.(case "None" @@ ctor None))]. Should open
+       the representation of {!Type.Gist.Field.t} ?}
+    {- Move field {{!Type.Gist.Field.default}default values} to a
+       standard [Meta] key or keep them ? Do a review once a codec with
+       default values on absence has been written.}
+    {- {!Type.Gist.Rec} and {!Type.Gist.rec'} rename to [Unlazy]
+       and unlazy ?}
+    {- {!Type.Gist.String} and {!Type.Gist.Bytes} it's unclear
+       whether we want the char gist.}
+    {- [Typegist.Fun.Generic.{equal,compare}] clarify and document
+       the behaviour on {!Typegist.Type.Gist.maplike},
+       {!Typegist.Type.Gist.arraylike} and variant cases. The implementation
+       on [Hashtbl.t] are inefficient, the stdlib doesn't help much.}
+    {- Should we add [Stdlib.Seq] to {!Typegist.Type.Gist.sum} ?
+       Feels a bit odd to mix in corecursion in there}
+    {- Representation of variants. The internal data structure is a bit too
+       naive. Both {!Fun.Generic.compare} and {!Typegist.Fun.Generic.random} are
+       quite inefficient.}
+    {- Add optinal parameters to easily specify [Meta.Doc] ?}}
+
+    {2:meta_placement Meta placement}
+
+    Difficult to find the right design. Basically we can have it
+    everywhere like now, or only in the toplevel cases or in a single
+    case at the toplevel. This may lead to different attachement
+    interpretations though.
+
+    Tried to simply shift them in every toplevel case and let, for
+    example, the gist of a field define the meta of the field but it
+    is problematic with a field whose gist is a recursion step (at a
+    meta to the rec step ?). Also our intepretation in the pretty
+    printer example is different.  The meta for the field redefines
+    the whole field printing. While the pretty printer of the field's
+    gist redefines the value. Is it important for other processors ?
+
+    In general it looks easier if we don't have to redefine the meta
+    of existing gists to be able to specify metadata at a given point
+    (e.g. the metadata of fields). The drawback is that processors
+    need to document a bit more precisely which meta is relevant for
+    them and we get more lookups (the field's meta and its gist).
+
+    Also tried to have meta in the parent case for cases which are
+    variants ([Type.Gist.Scalar], [Type.Gist.Scalar]. etc.) but in the
+    end I shifted them back into the subvariants themselves despite
+    the types looking heavier ({!Typegist.Type.Gist.scalar},
+    {!Typegist.Type.Gist.sum}, etc.). It makes the types meta-aware
+    without needing to carry something on the side. The drawback is
+    that generic meta lookup on a gist is likely slower.
+
+    The current scheme ends up making a lots of lookups. For this
+    having only meta as a toplevel case is likely better. It also
+    makes the AST more lightweight. Given the current generic function
+    examples, except maybe for the pretty printer, that would be
+    entirely sufficient. But once we get to for example, type-directed
+    uis. things may look a bit different, especially at the field level.
