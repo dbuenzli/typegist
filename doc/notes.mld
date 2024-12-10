@@ -108,7 +108,10 @@ Here are a few salient points:
     {- Representation of variants. The internal data structure is a bit too
        naive. Both {!Fun.Generic.compare} and {!Typegist.Fun.Generic.random} are
        quite inefficient.}
-    {- Add optinal parameters to easily specify [Meta.Doc] ?}}
+    {- Add optional parameters to easily specify [Meta.Doc] ?}
+   {- The semantics of {!Typegist.Type.Gist.name} depends on the
+      context. Should we split [name] into [case_name] and
+      [type_name]}}
 
     {2:meta_placement Meta placement}
 
@@ -145,3 +148,5 @@ Here are a few salient points:
     examples, except maybe for the pretty printer, that would be
     entirely sufficient. But once we get to for example, type-directed
     uis. things may look a bit different, especially at the field level.
+    It also means that generic functions need to thread and handle the
+    scope of meta, that looks like a bad idea.

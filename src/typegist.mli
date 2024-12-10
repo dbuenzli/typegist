@@ -80,7 +80,7 @@ module Type : sig
       See the {{!page-quick}quick start}. The {{!page-cookbook}cookbook}
       has simple description examples. Generic functions
       can be found in {!Fun.Generic} and this is
-      a {{!page-cookbook.generic}generic function template}
+      a {{!page-cookbook.writing_generic}generic function template}
       to write your own. *)
   module Gist : sig
 
@@ -119,8 +119,8 @@ module Type : sig
       (** [fold_left f init a] folds [f] over [a]'s elements in increasing
           index order starting with [init]. *)
 
-      val type_gist_name : string
-      (** [type_gist_name] is a name for the representation *)
+      val type_name : string
+      (** [type_name] is a type name for the array. *)
     end
 
     type ('elt, 'arr) array_module =
@@ -168,8 +168,8 @@ module Type : sig
       (** [compare cmp m0 m1] totally order [m0] and [m1] with
           [cmp] used to compare the value of equal keys. *)
 
-      val type_gist_name : string
-      (** [type_gist_name] is a name for the representation *)
+      val type_name : string
+      (** [type_name] is a type name for the map. *)
     end
 
     type ('k, 'v, 'm) map_module =
@@ -340,8 +340,8 @@ module Type : sig
 
     (** {1:constructors Constructors and operations} *)
 
-    val todo : ?name:string -> unit -> 'a t
-    (** [todo ~name ()] is a stub gist. Generic functions
+    val todo : ?type_name:string -> unit -> 'a t
+    (** [todo ~type_name ()] is a stub gist. Generic functions
         will raise [Invalid_argument] when they hit the stub. *)
 
     val ref : ?meta:'a ref Meta.t -> 'a t -> 'a ref t
@@ -367,8 +367,11 @@ module Type : sig
       val zero : 'a scalar -> 'a
       (** [zero s] is a zero value for [s]. *)
 
-      val ocaml_type_name : 'a scalar -> string
-      (** [ocaml_type_name s] is the ocaml type name of the scalar of [s]. *)
+      val type_name : 'a scalar -> string
+      (** [type_name s] is the OCaml type name of the scalar of [s]. *)
+
+      val with_meta : 'a Meta.t -> 'a scalar -> 'a scalar
+      (** [with_meta meta s] is [s] with meta [meta]. *)
 
       val equal : 'a scalar -> 'a -> 'a -> bool
       (** [equal s v0 v1] is [true] iff [v0] and [v1] are the same
@@ -377,6 +380,9 @@ module Type : sig
       val compare : 'a scalar -> 'a -> 'a -> int
       (** [equal s v0 v1] is [true] iff [v0] and [v1] are the same
           value as per the Stdlib's corresponding [M.compare] function. *)
+
+      val pp : 'a scalar -> Format.formatter -> 'a -> unit
+      (** [pp s] is a formatter for scalar [s] *)
 
       val to_string : 'a scalar -> 'a -> string
       (** [to_string s v] converts [v] to a string. This uses the
@@ -438,16 +444,19 @@ module Type : sig
       val meta : ('elt, 'arr) arraylike -> 'arr Meta.t
       (** [meta a] is the metadata of [a]. *)
 
-      val name : ('elt, 'arr) arraylike -> string
-      (** [name a] is the name of [a]. *)
+      val type_name : ('elt, 'arr) arraylike -> string
+      (** [type_name a] is the type name of [a]. *)
 
       val elt : ('elt, 'arr) t -> 'elt gist
       (** [elt a] is the representation of the elements of [a]. *)
 
+      val with_meta :
+        'arr Meta.t -> ('elt, 'arr) arraylike -> ('elt, 'arr) arraylike
+      (** [with_meta meta a] is [a] with meta [meta]. *)
+
       (** {1:generalizing Generalizing to array modules} *)
 
-      val to_array_module :
-        ('elt, 'arr) arraylike -> ('elt, 'arr) array_module
+      val to_array_module : ('elt, 'arr) arraylike -> ('elt, 'arr) array_module
       (** [to_array_module a] is an array module for [a].
           Note that if [a] is {!constructor-String}, the {!ARRAY.set}
           function raises [Invalid_argument] in the resulting module. *)
@@ -493,14 +502,17 @@ module Type : sig
       val meta : ('k, 'v, 'm) maplike -> 'm Meta.t
       (** [meta m] is the metadata of [m]. *)
 
-      val name : ('k, 'v, 'm) maplike -> string
-      (** [name m] is the name of [m]. *)
+      val type_name : ('k, 'v, 'm) maplike -> string
+      (** [type_name m] is the type name of [m]. *)
 
       val key : ('k, 'v, 'm) maplike -> 'k gist
       (** [key m] is the representation of the keys of [m]. *)
 
       val value : ('k, 'v, 'm) maplike -> 'v gist
       (** [value m] is the representation of the values of [m]. *)
+
+      val with_meta : 'm Meta.t -> ('k, 'v, 'm) maplike -> ('k, 'v, 'm) maplike
+      (** [with_meta meta m] is [m] with meta [meta]. *)
 
       (** {1:map_modules Map modules from [Map.S] modules} *)
 
@@ -681,7 +693,8 @@ let pair_gist gfst gsnd =
       (** [meta p] is the metadata of [p]. *)
 
       val name : 'p product -> string
-      (** [name p] is the name of [p] (if any). *)
+      (** [name p] is the name of [p] (if any). For records or products this
+          is the type name for variant cases this is the case name. *)
 
       val fields : 'p product -> ('p, 'p) fields
       (** [fields p] are the fields of [p]. *)
@@ -691,6 +704,9 @@ let pair_gist gfst gsnd =
 
       val is_singleton : 'p product -> bool
       (** [is_singleton p] is [true] if [p] has a single field. *)
+
+      val with_meta : 'p Meta.t -> 'p product -> 'p product
+      (** [with_meta meta p] is [p] with meta [meta]. *)
     end
 
     val dim :
@@ -700,22 +716,23 @@ let pair_gist gfst gsnd =
     (** [dim g project] defines a dimension of a product of type ['p].
         This is just {!Field.make}. *)
 
-    val product : ?meta:'p Meta.t -> ?name:string -> ('p, 'p) fields -> 'p t
+    val product :
+      ?meta:'p Meta.t -> ?type_name:string -> ('p, 'p) fields -> 'p t
     (** [product dims] is a product with dimensions and construction
         represented by [dims]. This is {!Product.make} wrapped in a
         {!constructor-Product} gist value. *)
 
     val p2 :
-      ?meta:('a * 'b) Meta.t -> ?name:string -> 'a t -> 'b t -> ('a * 'b) t
+      ?meta:('a * 'b) Meta.t -> ?type_name:string -> 'a t -> 'b t -> ('a * 'b) t
     (** [p2] represents pairs with given dimensions types. *)
 
     val p3 :
-      ?meta:('a * 'b *'c) Meta.t -> ?name:string -> 'a t -> 'b t -> 'c t ->
+      ?meta:('a * 'b *'c) Meta.t -> ?type_name:string -> 'a t -> 'b t -> 'c t ->
       ('a * 'b * 'c) t
     (** [p3] represents triplets with given dimensions types. *)
 
     val p4 :
-      ?meta:('a * 'b * 'c * 'd) Meta.t -> ?name:string -> 'a t -> 'b t ->
+      ?meta:('a * 'b * 'c * 'd) Meta.t -> ?type_name:string -> 'a t -> 'b t ->
       'c t -> 'd t -> ('a * 'b * 'c * 'd) t
     (** [p4] represents quadruplets with given dimensions types. *)
 
@@ -732,7 +749,7 @@ let pair_gist gfst gsnd =
 
     val record : ?meta:'r Meta.t -> string -> ('r, 'r) fields -> 'r t
     (** [record name fields] is a record named [name] with fields
-        [field]. This is {!Record.make} wrapped in a {!constructor-Record}
+        [field]. This is {!Product.make} wrapped in a {!constructor-Record}
         gist value. *)
 
 (** {2:variant_ops Variants}
@@ -790,16 +807,16 @@ let pair_gist gfst gsnd =
       (** The type for representing variants of type ['v]. *)
 
       val make :
-        ?meta:'v Meta.t -> string -> ('v -> 'v case) -> 'v case list ->
-        'v variant
-      (** [v name project cases] is a variant named [name] with
-          deconstructor [project] and case enumeration [cases]. *)
+        ?meta:'v Meta.t -> string -> ('v -> 'v case) ->
+        'v case list -> 'v variant
+      (** [v type_name project cases] is a variant with type name [type_name]
+          with deconstructor [project] and case enumeration [cases]. *)
 
       val meta : 'v variant -> 'v Meta.t
       (** [meta v] is the metadata of [v]. *)
 
-      val name : 'v variant -> string
-      (** [name v] is the name of [v]. *)
+      val type_name : 'v variant -> string
+      (** [type_name v] is the type name of [v]. *)
 
       val project : 'v variant -> 'v -> 'v case
       (** [project v] is the projection function (case selector) of [v]. *)
@@ -842,7 +859,7 @@ let pair_gist gfst gsnd =
     val variant :
       ?meta:'v Meta.t -> string -> ('v -> 'v Variant.case) ->
       'v Variant.case list -> 'v t
-    (** [variant name project cases] is a variant decontructed
+    (** [variant type_name project cases] is a variant decontructed
         by [project] and whose cases are enumerated in [cases].
         This is {!Variant.make} wrapped in a {!constructor-Variant}
         and {!constructor-Sum} gist value. *)
@@ -863,13 +880,16 @@ let pair_gist gfst gsnd =
       val meta : 's sum -> 's Meta.t
       (** [meta s] is the meta of [s]. *)
 
-      val name : 's sum -> string
-      (** [name s] is the name of [s]. *)
+      val type_name : 's sum -> string
+      (** [type_name s] is the type name of [s]. *)
 
       val to_variant : 's sum -> 's variant
       (** [to_variant s] is [s] as a variant type representation.
           This generalizes the specialized {{!type-sum}[sum] cases} to the
           generic representation of variants. *)
+
+      val with_meta : 's Meta.t -> 's sum -> 's sum
+      (** [with_meta meta p] is [p] with meta [meta]. *)
     end
 
     val option : ?meta:'a option Meta.t -> 'a t -> 'a option t
@@ -914,6 +934,9 @@ let pair_gist gfst gsnd =
 
       val range : ('a, 'b) func -> 'b gist
       (** [range f] is representation of the range of [f]. *)
+
+      val with_meta : ('a -> 'b) Meta.t -> ('a, 'b) func -> ('a, 'b) func
+      (** [with_meta meta f] is [f] with meta [meta]. *)
     end
 
     val func : ?meta:('a -> 'b) Meta.t -> 'a t -> 'b t -> ('a -> 'b) t
@@ -972,6 +995,9 @@ let pair_gist gfst gsnd =
         val project : ('a, 'repr) t -> 'repr -> 'a
         (** [project r] projects the public representation in the abstract
             type. *)
+
+        val with_meta : 'repr Meta.t -> ('a, 'repr) t -> ('a, 'repr) t
+        (** [with_meta meta r] is [r] with meta [meta]. *)
       end
 
       type 't repr = Repr : ('t, 'rep) Repr.t -> 't repr
@@ -1001,24 +1027,33 @@ let pair_gist gfst gsnd =
       val meta : 'a abstract -> 'a Meta.t
       (** [meta a] is the metadata of [a]. *)
 
-      val name : 'a abstract -> string
-      (** [name a] is the name of [a]. *)
+      val type_name : 'a abstract -> string
+      (** [type_name a] is the type name of [a]. *)
 
       val reprs : 'a abstract -> 'a repr list
       (** [reprs a] are the public representations of [a]. The first
           representation (if any) is the one to favour. *)
+
+      val with_meta : 'a Meta.t -> 'a abstract -> 'a abstract
+      (** [with_meta meta a] is [a] with meta [meta]. *)
     end
 
     val abstract :
-      ?meta:'a Meta.t -> string -> reprs:'a Abstract.repr list -> 'a t
-    (** [abstract ~meta name ~reprs] represents an abstract type named
-        [name] with public representations [reprs]. This is
+      ?meta:'a Meta.t -> string -> 'a Abstract.repr list -> 'a t
+    (** [abstract ~meta name reprs] represents an abstract type named
+        [type_name] with public representations [reprs]. This is
         {!Abstract.make} wrapped in an {!constructor-Abstract} gist value. *)
 
     (** {2:gist_ops Gists} *)
 
     val meta : 'a t -> 'a Meta.t
     (** [meta g] is [g]'s top meta. *)
+
+    val with_meta : 'a Meta.t -> 'a t -> 'a t
+    (** [with_meta m g] is [g] with meta [meta]. *)
+
+    val type_name : 'a t -> string
+    (** [type_name g] is [g]'s type name. *)
 
     val pp_type : Format.formatter -> 'a t -> unit
     (** [pp_type g] formats a pseudo OCaml type expression for [g]. *)

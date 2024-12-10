@@ -100,7 +100,7 @@ module Type = struct
       val init : int -> (int -> elt) -> t
       val iter : (elt -> unit) -> t -> unit
       val fold_left : ('a -> elt -> 'a) -> 'a -> t -> 'a
-      val type_gist_name : string
+      val type_name : string
     end
 
     type ('elt, 'arr) array_module =
@@ -118,7 +118,7 @@ module Type = struct
       val fold : (key -> value -> 'acc -> 'acc) -> t -> 'acc -> 'acc
       val equal : t -> t -> bool
       val compare : t -> t -> int
-      val type_gist_name : string
+      val type_name : string
     end
 
     type ('k, 'v, 'm) map_module =
@@ -178,7 +178,7 @@ module Type = struct
     and 'r record = 'r product
     and 'v variant =
       { meta : 'v Meta.t;
-        name : string;
+        type_name : string;
         project : 'v -> 'v product;
         cases : 'v product list; }
 
@@ -206,7 +206,7 @@ module Type = struct
 
     and 'a abstract =
       { meta : 'a Meta.t;
-        name : string;
+        type_name : string;
         reprs : 'a abstract_repr_exists list; }
 
     and 'a t =
@@ -224,8 +224,8 @@ module Type = struct
 
     (* Constructors and helpers *)
 
-    let todo ?(name = "<unknown>") () =
-      Rec (lazy (invalid_arg ("TODO: " ^ name ^ " gist")))
+    let todo ?(type_name = "<unknown>") () =
+      Rec (lazy (invalid_arg ("TODO: " ^ type_name ^ " gist")))
 
     let rec' lg = Rec lg
     let ref ?(meta = Meta.empty) g = Ref (meta, g)
@@ -244,7 +244,7 @@ module Type = struct
       | Uchar _ -> Uchar.of_int 0x0000 | Int _ -> 0 | Int32 _ -> 0l
       | Int64 _ -> 0L | Nativeint _ -> 0n | Float _ -> 0.0
 
-      let ocaml_type_name : type a. a t -> string = function
+      let type_name : type a. a t -> string = function
       | Unit _ -> "unit" | Bool _ -> "bool" | Char _ -> "char"
       | Uchar _ -> "Uchar.t" | Int _ -> "int" | Int32 _ -> "int32"
       | Int64 _ -> "int64" | Nativeint _ -> "nativeint" | Float _ -> "float"
@@ -278,16 +278,21 @@ module Type = struct
       | Float _ -> Float.to_string
 
       let pp : type a. a t -> Format.formatter -> a -> unit =
-      fun g ppf v -> match g with
-      | Unit _ -> Format.pp_print_string ppf "()"
-      | Bool _ -> Format.pp_print_bool ppf v
-      | Char _ -> Format.pp_print_char ppf v
-      | Uchar _ -> Format.fprintf ppf "@<1>%s" (uchar_to_string v)
-      | Int _ -> Format.pp_print_int ppf v
-      | Int32 _ -> Format.fprintf ppf "%ld" v
-      | Int64 _ -> Format.fprintf ppf "%Ld" v
-      | Nativeint _ -> Format.fprintf ppf "%nd" v
-      | Float _ -> Format.fprintf ppf "%g" v
+      fun g -> match g with
+      | Unit _ -> fun ppf _ -> Format.pp_print_string ppf "()"
+      | Bool _ -> Format.pp_print_bool
+      | Char _ -> Format.pp_print_char
+      | Uchar _ -> fun ppf v -> Format.fprintf ppf "@<1>%s" (uchar_to_string v)
+      | Int _ -> Format.pp_print_int
+      | Int32 _ -> fun ppf v -> Format.fprintf ppf "%ld" v
+      | Int64 _ -> fun ppf v -> Format.fprintf ppf "%Ld" v
+      | Nativeint _ -> fun ppf v -> Format.fprintf ppf "%nd" v
+      | Float _ -> fun ppf v -> Format.fprintf ppf "%g" v
+
+      let with_meta : type a. a Meta.t -> a t -> a t = fun m s -> match s with
+      | Unit _ -> Unit m | Bool _ -> Bool m | Char _ -> Char m
+      | Uchar _ -> Uchar m | Int _ -> Int m | Int32 _ -> Int32 m
+      | Int64 _ -> Int64 m | Nativeint _ -> Nativeint m | Float _ -> Float m
     end
 
     let unit = Scalar (Unit Meta.empty)
@@ -309,15 +314,25 @@ module Type = struct
       | String (m, _) -> m | Bytes (m, _) -> m | Array (m, _) -> m
       | Bigarray1 (m, _, _, _) -> m | Array_module (m, _, _) -> m
 
-      let name : type elt arr. (elt, arr) arraylike -> string = function
+      let type_name : type elt arr. (elt, arr) arraylike -> string = function
       | String (_, _) -> "string" | Bytes (_, _) -> "bytes"
       | Array (_, _) -> "array" | Bigarray1 (_, _, _, _) -> "bigarray1"
-      | Array_module (_, (module A), _) -> A.type_gist_name
+      | Array_module (_, (module A), _) -> A.type_name
 
       let elt : type elt arr. (elt, arr) arraylike -> elt gist = function
       | String (_, elt) -> elt | Bytes (_, elt) -> elt
       | Array (_, elt) -> elt | Bigarray1 (_, _, _, elt) -> elt
       | Array_module (_, _, elt) -> elt
+
+      let with_meta :
+        type elt arr. arr Meta.t -> (elt, arr) arraylike ->
+        (elt, arr) arraylike
+      =
+      fun m a -> match a with
+      | String (_, elt) -> String (m, elt) | Bytes (_, elt) -> Bytes (m, elt)
+      | Array (_, elt) -> Array (m, elt)
+      | Bigarray1 (_, k, l, elt) -> Bigarray1 (m, k, l, elt)
+      | Array_module (_, a, elt) -> Array_module (m, a, elt)
 
       (* Generic array modules for the specialisation. *)
 
@@ -326,14 +341,14 @@ module Type = struct
         type t = string
         type elt = char
         let set s i elt = invalid_arg "Strings are immutable"
-        let type_gist_name = "string"
+        let type_name = "string"
       end
 
       module Bytes_array_module = struct
         include Bytes
         type t = bytes
         type elt = char
-        let type_gist_name = "bytes"
+        let type_name = "bytes"
       end
 
       let array_array_module :
@@ -344,7 +359,7 @@ module Type = struct
           include Array
           type t = elt array
           type nonrec elt = elt
-          let type_gist_name = "array"
+          let type_name = "array"
         end
         in
         (module Array_module)
@@ -376,7 +391,7 @@ module Type = struct
           let init = Bigarray.Array1.init kind layout
           let iter = ba_iter
           let fold_left = ba_fold_left
-          let type_gist_name = "array"
+          let type_name = "array"
         end
         in
         (module Array_module)
@@ -408,15 +423,22 @@ module Type = struct
       let meta : type k v m. (k, v, m) maplike -> m Meta.t = function
       | Hashtbl (m, _, _) -> m | Map_module (m, _, _, _) -> m
 
-      let name : type k v m. (k, v, m) maplike -> string = function
+      let type_name : type k v m. (k, v, m) maplike -> string = function
       | Hashtbl (m, _, _) -> "Hashtbl.t"
-      | Map_module (_, (module M), _, _) -> M.type_gist_name
+      | Map_module (_, (module M), _, _) -> M.type_name
 
       let key : type k v m. (k, v, m) maplike -> k gist = function
       | Hashtbl (_, k, _) | Map_module (_, _, k, _) -> k
 
       let value : type k v m. (k, v, m) maplike -> v gist = function
       | Hashtbl (_, _, v) | Map_module (_, _, _, v) -> v
+
+      let with_meta :
+        type k v m. m Meta.t -> (k, v, m) maplike -> (k, v, m) maplike
+      =
+      fun m map -> match map with
+      | Hashtbl (m, k,  v) -> Hashtbl (m, k, v)
+      | Map_module (m, map, k, v) -> Map_module (m, map, k, v)
 
       module type VALUE = sig
         type t
@@ -439,7 +461,7 @@ module Type = struct
         let fold = M.fold
         let equal = M.equal V.equal
         let compare = M.compare V.compare
-        let type_gist_name = "Map.t"
+        let type_name = "Map.t"
       end
     end
 
@@ -479,38 +501,41 @@ module Type = struct
 
     module Product = struct
       type 'p t = 'p product
-      let make ?(meta = Meta.empty) ?(name = "") fields = { meta; name; fields }
+      let make ?(meta = Meta.empty) ?(name = "") fields =
+        { meta; name; fields }
       let meta (p : 'p t) = p.meta
       let name (p : 'p t) = p.name
       let fields (p : 'p t) = p.fields
       let is_empty (p : 'v t) = Fields.is_empty p.fields
       let is_singleton (p : 'v t) = Fields.is_singleton p.fields
+      let with_meta meta (p : 'v t) = { p with meta }
     end
 
     let dim ?meta ?name ?inject ?default gist project =
       Field.make ?meta ?name ?inject ?default gist project
 
-    let product ?meta ?name fields = Product (Product.make ?meta ?name fields)
+    let product ?meta ?type_name:name fields =
+      Product (Product.make ?meta ?name fields)
 
-    let p2 ?meta ?name g0 g1 =
+    let p2 ?meta ?type_name g0 g1 =
       let p2 v0 v1 = v0, v1 in
       let d0 = dim g0 fst and d1 = dim g1 snd in
-      product @@ ctor p2 * d0 * d1
+      product ?meta ?type_name @@ ctor p2 * d0 * d1
 
-    let p3 ?meta ?name g0 g1 g2 =
+    let p3 ?meta ?type_name g0 g1 g2 =
       let p3 v0 v1 v2 = v0, v1, v2 in
       let d0 = dim g0 (fun (v, _, _) -> v) in
       let d1 = dim g1 (fun (_, v, _) -> v) in
       let d2 = dim g2 (fun (_, _, v) -> v) in
-      product @@ ctor p3 * d0 * d1 * d2
+      product ?meta ?type_name @@ ctor p3 * d0 * d1 * d2
 
-    let p4 ?meta ?name g0 g1 g2 g3 =
+    let p4 ?meta ?type_name g0 g1 g2 g3 =
       let p4 v0 v1 v2 v3 = v0, v1, v2, v3 in
       let d0 = dim g0 (fun (v, _, _, _) -> v) in
       let d1 = dim g1 (fun (_, v, _, _) -> v) in
       let d2 = dim g2 (fun (_, _, v, _) -> v) in
       let d3 = dim g3 (fun (_, _, _, v) -> v) in
-      product @@ ctor p4 * d0 * d1 * d2 * d3
+      product ?meta ?type_name @@ ctor p4 * d0 * d1 * d2 * d3
 
     (* Records *)
 
@@ -541,11 +566,11 @@ module Type = struct
 
       type 'v t = 'v variant
 
-      let make ?(meta = Meta.empty) name project cases =
-        { meta; name; project; cases }
+      let make ?(meta = Meta.empty) type_name project cases =
+        { meta; type_name; project; cases }
 
       let meta (v : 'v t) = v.meta
-      let name (v : 'v t) = v.name
+      let type_name (v : 'v t) = v.type_name
       let project (v : 'v t) = v.project
       let cases (v : 'v t) = v.cases
       let case_count (v : 'v t) = List.length v.cases
@@ -605,8 +630,8 @@ module Type = struct
     end
 
     let case ?(meta = Meta.empty) name fields = { meta; name; fields }
-    let variant ?(meta = Meta.empty) name project cases =
-      Sum (Variant { meta; name; project; cases })
+    let variant ?(meta = Meta.empty) type_name project cases =
+      Sum (Variant { meta; type_name; project; cases })
 
     (* Sums *)
 
@@ -620,10 +645,10 @@ module Type = struct
       | List (m, _) -> m
       | Variant v -> Variant.meta v
 
-      let name : type s. s sum -> string = function
+      let type_name : type s. s sum -> string = function
       | Option (_, _) -> "option" | Either (_, _, _) -> "Either.t"
       | Result (_, _, _) -> "result" | List (_, _) -> "list"
-      | Variant v -> Variant.name v
+      | Variant v -> Variant.type_name v
 
       let to_variant : type s. s sum -> s variant = function
       | Option (meta, a) -> Variant.of_option ~meta a
@@ -631,6 +656,14 @@ module Type = struct
       | Result (meta, a, b) -> Variant.of_result ~meta a b
       | List (meta, a) -> Variant.of_list ~meta a
       | Variant v -> v
+
+      let with_meta : type s. s Meta.t -> s sum -> s sum = fun meta s ->
+      match s with
+      | Option (_, v) -> Option (meta, v)
+      | Either (_, l, r) -> Either (meta, l, r)
+      | Result (_, a, b) -> Result (meta, a, b)
+      | List (_, a) -> List (meta, a)
+      | Variant v -> Variant { v with meta }
     end
 
     let option ?(meta = Meta.empty) v = Sum (Option (meta, v))
@@ -646,6 +679,7 @@ module Type = struct
       let meta (f : ('a, 'b) t) = f.meta
       let domain f = f.domain
       let range f = f.range
+      let with_meta meta (f : ('a, 'b) t) = { f with meta }
     end
 
     let func ?meta d r = Func (Func.make ?meta d r)
@@ -664,6 +698,7 @@ module Type = struct
         let gist (r : ('a, 'repr) t) = r.gist
         let inject (r : ('a, 'repr) t) = r.inject
         let project (r : ('a, 'repr) t) = r.project
+        let with_meta meta (r : ('a, 'repr) t) = { r with meta}
       end
 
       type 'a repr = 'a abstract_repr_exists =
@@ -673,13 +708,16 @@ module Type = struct
         Repr (Repr.make ?meta ~version gist inject project)
 
       type 'a t = 'a abstract
-      let make ?(meta = Meta.empty) name ~reprs = { meta; name; reprs }
+      let make ?(meta = Meta.empty) type_name ~reprs =
+        { meta; type_name; reprs }
+
       let meta (a : 'a t) = a.meta
-      let name (a : 'a t) = a.name
+      let type_name (a : 'a t) = a.type_name
       let reprs (a : 'a t) = a.reprs
+      let with_meta meta (a : 'a t) = { a with meta }
     end
 
-    let abstract ?meta name ~reprs = Abstract (Abstract.make ?meta name ~reprs)
+    let abstract ?meta name reprs = Abstract (Abstract.make ?meta name ~reprs)
 
     (* Gists *)
 
@@ -690,6 +728,29 @@ module Type = struct
     | Abstract a -> Abstract.meta a
     | Lazy (m, l) -> m | Ref (m, r) -> m
     | Rec r -> meta (Lazy.force r)
+
+    let rec with_meta : type a. a Meta.t -> a t -> a t = fun m g -> match g with
+    | Scalar s -> Scalar (Scalar.with_meta m s)
+    | Arraylike a -> Arraylike (Arraylike.with_meta m a)
+    | Maplike map -> Maplike (Maplike.with_meta m map)
+    | Product p -> Product (Product.with_meta m p)
+    | Record r -> Record (Product.with_meta m r)
+    | Sum s -> Sum (Sum.with_meta m s)
+    | Func f -> Func (Func.with_meta m f)
+    | Abstract a -> Abstract (Abstract.with_meta m a)
+    | Lazy (_, l) -> Lazy (m, l) | Ref (m, r) -> Ref (m, r)
+    | Rec r -> with_meta m (Lazy.force r)
+
+    let rec type_name : type a. a t -> string = function
+    | Scalar s -> Scalar.type_name s | Arraylike a -> Arraylike.type_name a
+    | Maplike m -> Maplike.type_name m
+    | Product p -> Product.name p
+    | Record r -> Product.name r
+    | Sum s -> Sum.type_name s
+    | Func f -> "<fun>" (* XXX fixme *)
+    | Abstract a -> Abstract.type_name a
+    | Lazy (_, l) -> type_name l ^ "_lazy" | Ref (m, r) -> type_name r ^ "_ref"
+    | Rec r -> type_name (Lazy.force r)
 
     type 'a fmt = Format.formatter -> 'a -> unit
     let pf = Format.fprintf
@@ -705,7 +766,7 @@ module Type = struct
         | Bigarray1 (_, _, _, elt) ->
             pf ppf "@[@[%a@] Bigarray.Array1.t@]" (pp ~ref:true) elt
         | Array_module (_, (module A), elt) ->
-            pf ppf "@[@[%a@] %s@]" (pp ~ref:true) elt A.type_gist_name
+            pf ppf "@[@[%a@] %s@]" (pp ~ref:true) elt A.type_name
 
       and maplike : type m k v. ref:bool -> (m, k, v) maplike fmt =
         fun ~ref ppf -> function
@@ -714,7 +775,7 @@ module Type = struct
             pf ppf "@[@[<1>(%a,@ %a)@] Hasthbl.t@]" pp_k k pp_v v
         | Map_module (_, (module M), k, v) ->
             let pp_k = pp ~ref:true and pp_v = pp ~ref:true in
-            pf ppf "@[@[<1>(%a,@ %a)@] %s@]" pp_k k pp_v v M.type_gist_name
+            pf ppf "@[@[<1>(%a,@ %a)@] %s@]" pp_k k pp_v v M.type_name
 
       and product : type p. ref:bool -> paren:bool -> p product fmt =
         fun ~ref ~paren ppf p ->
@@ -752,7 +813,8 @@ module Type = struct
       | List (m, a) ->
           pf ppf "%a list" (pp ~ref:true) a
       | Variant v ->
-          if ref && Variant.name v <> "" then pf ppf "%s" (Variant.name v) else
+          if ref && Variant.type_name v <> ""
+          then pf ppf "%s" (Variant.type_name v) else
           let pp_case ppf c = match Variant.Case.is_empty c with
           | true -> pf ppf "@[<2>| %s@]" (Variant.Case.name c)
           | false ->
@@ -766,14 +828,14 @@ module Type = struct
         pf ppf "@[%a ->@ %a@]" (pp ~ref:true) d (pp ~ref:true) r
 
       and pp : type a. ref:bool -> a t fmt = fun ~ref ppf g -> match g with
-      | Scalar s -> Format.pp_print_string ppf (Scalar.ocaml_type_name s)
+      | Scalar s -> Format.pp_print_string ppf (Scalar.type_name s)
       | Arraylike a -> arraylike ~ref ppf a
       | Maplike m -> maplike ~ref ppf m
       | Product p -> product ~ref ~paren:true ppf p
       | Record r -> record ~ref ppf r
       | Sum s -> sum ~ref ppf s
       | Func f -> func ~ref ppf f
-      | Abstract a -> pp_string ppf (Abstract.name a)
+      | Abstract a -> pp_string ppf (Abstract.type_name a)
       | Lazy (_, l) -> pf ppf "@[@[%a@] lazy_t@]" (pp ~ref:true) l
       | Ref (_, r) -> pf ppf "@[@[%a@] ref@]" (pp ~ref:true) r
       | Rec r -> pp ppf ~ref:true (Lazy.force r)
@@ -863,7 +925,7 @@ module Fun = struct
       | Bigarray1 (_, _, _, g) ->
           pp_array ~kind:"ba" Type.Gist.Arraylike.ba_iter (pp g) ppf v
       | Array_module (_, (module A), g) ->
-          pp_array ~kind:A.type_gist_name A.iter (pp g) ppf v
+          pp_array ~kind:A.type_name A.iter (pp g) ppf v
 
       and pp_maplike : type k v m. (k, v, m) Type.Gist.maplike -> m fmt =
       fun m ppf v -> match m with
@@ -871,7 +933,7 @@ module Fun = struct
           pp_map ~kind:"Hashtbl.t" Hashtbl.iter (pp gk) (pp gv) ppf v
       | Map_module (_, (module M), gk, gv) ->
           let iter f m = M.fold (fun k v () -> f k v) m () in
-          pp_map ~kind:M.type_gist_name iter (pp gk) (pp gv) ppf v
+          pp_map ~kind:M.type_name iter (pp gk) (pp gv) ppf v
 
       and pp_product : type p. p Type.Gist.product -> p fmt = fun p ppf v ->
         let pp_dim ~sep dim ppf p =
@@ -1036,7 +1098,7 @@ module Fun = struct
       and equal_abstract : type a. a Type.Gist.abstract -> a eq = fun a v0 v1 ->
         match Type.Gist.Abstract.reprs a with
         | [] ->
-            let n = Type.Gist.Abstract.name a in
+            let n = Type.Gist.Abstract.type_name a in
             invalid_arg "%s: abstract type exposes no representation" n
         | (Repr r) :: _ ->
             let v0 = Type.Gist.Abstract.Repr.inject r v0 in
@@ -1142,7 +1204,7 @@ module Fun = struct
                a tag with each variant. Can also be useful for binary codecs. *)
             let rec loop v0c v1c = function
             | [] ->
-                let n = Type.Gist.Variant.name v in
+                let n = Type.Gist.Variant.type_name v in
                 invalid_arg "%s: inconsistent variant definition" n
             | c :: cs ->
                 if c == v0c then -1 else
@@ -1156,7 +1218,7 @@ module Fun = struct
       and compare_abstract : type a. a Type.Gist.abstract -> a cmp =
         fun a v0 v1 -> match Type.Gist.Abstract.reprs a with
         | [] ->
-            let n = Type.Gist.Abstract.name a in
+            let n = Type.Gist.Abstract.type_name a in
             invalid_arg "%s: abstract type exposes no representation" n
         | (Repr r) :: _ ->
             let v0 = Type.Gist.Abstract.Repr.inject r v0 in
@@ -1315,7 +1377,7 @@ module Fun = struct
         type a. a Type.Gist.abstract -> a rand = fun a ~size st ~bound ->
         match Type.Gist.Abstract.reprs a with
         | [] ->
-            let n = Type.Gist.Abstract.name a in
+            let n = Type.Gist.Abstract.type_name a in
             invalid_arg "%s: abstract type exposes no representation" n
         | (Repr r) :: _ ->
             let g = Type.Gist.Abstract.Repr.gist r in

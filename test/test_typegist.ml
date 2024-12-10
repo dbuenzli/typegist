@@ -92,7 +92,7 @@ let test_abstract_person () =
         let g = Type.Gist.(record "person" @@ ctor v * name * email * phone) in
         Type.Gist.Abstract.repr ~version:"v1" g Fun.id Fun.id
       in
-      Type.Gist.abstract "person" ~reprs:[repr_v1; repr_v0]
+      Type.Gist.abstract "person" [repr_v1; repr_v0]
 
     let pp = Fun.Generic.pp type_gist
   end
