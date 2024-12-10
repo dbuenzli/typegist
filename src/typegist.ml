@@ -514,19 +514,10 @@ module Type = struct
 
     (* Records *)
 
-    module Record = struct
-      type 'a gist = 'a t
-      type 'r t = 'r product
-      let make ?(meta = Meta.empty) name fields = { meta; name; fields }
-      let meta (p : 'p t) = p.meta
-      let name (p : 'p t) = p.name
-      let fields (p : 'p t) = p.fields
-    end
-
     let field ?(meta = Meta.empty) ?inject ?set ?default name gist project =
       { meta; name; gist; project; inject; set; default }
 
-    let record ?meta name fields = Record (Record.make ?meta  name fields)
+    let record ?meta name fields = Record (Product.make ?meta ~name fields)
 
     (* Variants *)
 
@@ -695,7 +686,7 @@ module Type = struct
     let rec meta : type a. a t -> a Meta.t = function
     | Scalar s -> Scalar.meta s | Arraylike a -> Arraylike.meta a
     | Maplike m -> Maplike.meta m | Product p -> Product.meta p
-    | Record r -> Record.meta r | Sum s -> Sum.meta s | Func f -> Func.meta f
+    | Record r -> Product.meta r | Sum s -> Sum.meta s | Func f -> Func.meta f
     | Abstract a -> Abstract.meta a
     | Lazy (m, l) -> m | Ref (m, r) -> m
     | Rec r -> meta (Lazy.force r)
@@ -747,8 +738,8 @@ module Type = struct
           | Ctor _ -> () | App (Ctor _, f) -> field ppf f
           | App (fs, f) -> fields ppf fs; pf ppf ";@,%a" field f
         in
-        if ref && Record.name r <> "" then pf ppf "%s" (Record.name r) else
-        pf ppf "@[<v2>{ %a@] }" fields (Record.fields r)
+        if ref && Product.name r <> "" then pf ppf "%s" (Product.name r) else
+        pf ppf "@[<v2>{ %a@] }" fields (Product.fields r)
 
       and sum : type a. ref:bool -> a sum fmt = fun ~ref ppf s -> match s with
       | Option (m, a) -> pf ppf "%a option" (pp ~ref:true) a
@@ -924,7 +915,7 @@ module Fun = struct
           | App (Ctor _, f) -> pp_field ~sep:false f ppf v
           | App (fs, f) -> pp_fields fs ppf v; pp_field ~sep:true f ppf v
         in
-        pf ppf "@[<v2>{ %a@] }" (pp_fields (Type.Gist.Record.fields r)) v
+        pf ppf "@[<v2>{ %a@] }" (pp_fields (Type.Gist.Product.fields r)) v
 
       and pp_abstract : type a. a Type.Gist.abstract -> a fmt = fun a ppf v ->
         match Type.Gist.Abstract.reprs a with

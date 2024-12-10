@@ -329,7 +329,7 @@ module Type : sig
     | Arraylike : ('elt, 'arr) arraylike -> 'arr t
     | Maplike : ('k, 'v, 'm) maplike -> 'm t
     | Product : 'p product -> 'p t
-    | Record : 'r record -> 'r t
+    | Record : 'r product -> 'r t
     | Sum : 's sum -> 's t
     | Func : ('a, 'b) func -> ('a -> 'b) t
     | Abstract : 'a abstract -> 'a t
@@ -723,27 +723,6 @@ let pair_gist gfst gsnd =
 
        Records are represented by named {{!product_ops}products} of
        named fields. *)
-
-    (** Operating on records. *)
-    module Record : sig
-
-      type 'a gist := 'a t
-
-      type 'r t = 'r record
-      (** The type for records of type ['r]. *)
-
-      val make : ?meta:'r Meta.t -> string -> ('r, 'r) fields -> 'r record
-      (** [make name fields] is a record named [name] with fields [fields]. *)
-
-      val meta : 'r record -> 'r Meta.t
-      (** [meta r] is the metadata of [r]. *)
-
-      val name : 'r record -> string
-      (** [name r] is the name of [r] (if any). *)
-
-      val fields : 'r record -> ('r, 'r) fields
-      (** [fields r] are the fields of [r]. *)
-    end
 
     val field :
       ?meta:'f Meta.t -> ?inject:('r -> 'f -> 'r) -> ?set:('r -> 'f -> unit) ->
