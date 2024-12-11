@@ -251,8 +251,13 @@ module Type : sig
       (** [Key (V)] is a new key with values of type ['a V.t]. *)
       module Key (V : VALUE) : KEY with type 'a value = 'a V.t
 
-      (** [Doc] is a metadata for a doc string. *)
+      (** {1:std_keys Standard keys. *)
+
+      (** [Doc] is a key for a doc string. *)
       module Doc : KEY with type 'a value = string
+
+      (** [Ignore] is a key for specifying to ignore the description. *)
+      module Ignore : KEY with type 'a value = bool
     end
 
     type 'a scalar =
@@ -590,7 +595,7 @@ module Type : sig
           type ['p]. *)
 
       val make :
-        ?meta:'f Meta.t -> ?name:string ->
+        ?meta:('p, 'f) field Meta.t -> ?name:string ->
         ?inject:('p -> 'f -> 'p) -> ?set:('p -> 'f -> unit) ->
         ?default:'f -> 'f gist ->
         ('p -> 'f) -> ('p, 'f) field
@@ -610,7 +615,7 @@ module Type : sig
           {- [default] is a default value for the dimension
              (defaults to [None]).}} *)
 
-      val meta : ('p, 'f) field -> 'f Meta.t
+      val meta : ('p, 'f) field -> ('p, 'f) field Meta.t
       (** [meta f] is the meta of [f]. *)
 
       val name : ('p, 'f) field ->  string
@@ -710,7 +715,7 @@ let pair_gist gfst gsnd =
     end
 
     val dim :
-      ?meta:'a Meta.t -> ?name:string ->
+      ?meta:('p, 'a) field Meta.t -> ?name:string ->
       ?inject:('p -> 'a -> 'p) -> ?default:'a -> 'a t -> ('p -> 'a) ->
       ('p, 'a) field
     (** [dim g project] defines a dimension of a product of type ['p].
@@ -742,8 +747,9 @@ let pair_gist gfst gsnd =
        named fields. *)
 
     val field :
-      ?meta:'f Meta.t -> ?inject:('r -> 'f -> 'r) -> ?set:('r -> 'f -> unit) ->
-      ?default:'f -> string -> 'f t -> ('r -> 'f) -> ('r, 'f) field
+      ?meta:('r, 'f) field Meta.t -> ?inject:('r -> 'f -> 'r) ->
+      ?set:('r -> 'f -> unit) -> ?default:'f -> string -> 'f t ->
+      ('r -> 'f) -> ('r, 'f) field
     (** [field name g project ] defines a record field for a record ['r].
         This is just {!Field.make}. *)
 
@@ -1101,7 +1107,7 @@ module Fun : sig
           a subtructure by always returning [true], the
           {!Equal.ignore} function does that. *)
       module Equal : sig
-          type 'a t = 'a -> 'a -> bool
+        type 'a t = 'a -> 'a -> bool
         (** The type for custom value equality of type ['a]. *)
 
         val ignore : 'a -> 'a -> bool
@@ -1175,12 +1181,14 @@ module Fun : sig
     (** [pp g ppf v] formats [v] as described by [g] on [ppf] with a pseudo
         OCaml syntax similar to what you would see in the toplevel.
         The function can be selectively overriden via the {!Meta.Fmt}
-        metadata key. *)
+        metadata key. Fields whose {!Type.Gist.Meta.Ignore} is [true]
+        are not printed. *)
 
     val equal : 'a Type.Gist.t -> 'a -> 'a -> bool
     (** [equal g v0 v1] determines the equality of values [v0] and [v1]
         as described by [g]. The process can be selectively overriden
-        via the {!Meta.Equal} metadata key.
+        via the {!Meta.Equal} metadata key. Fields whose
+        {!Type.Gist.Meta.Ignore} is [true] are ignored (are always equal).
 
         The function raises [Invalid_argument] on functional values and
         abstract types without representation; you can ignore them by using
@@ -1189,7 +1197,8 @@ module Fun : sig
     val compare : 'a Type.Gist.t -> 'a -> 'a -> int
     (** [compare g v0 v1] compares values [v0] and [v1] as described by [g].
         The function can be selectively overriden via {!Meta.Compare} metadata
-        keys.
+        keys. Fields whose {!Type.Gist.Meta.Ignore} is [true] are ignored
+        (are always equal).
 
         The function raises [Invalid_argument] on function values and
         abstract types without representation; you can ignore them
@@ -1200,6 +1209,8 @@ module Fun : sig
     (** [random g ~state ()] generates a random value described by [g].
         [state] is the random state to use, defaults to
         {!Random.get_state}[ ()].
+
+        FIXME do something with {!Type.Gist.Meta.Ignore}.
 
         [size] is an indicative strictly positive, size factor to let
         users control an upper bound on the size and complexity of

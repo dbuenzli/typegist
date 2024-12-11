@@ -85,7 +85,7 @@ module Type = struct
           find key m
       end
       module Doc = Key (struct type 'a t = string end)
-
+      module Ignore = Key (struct type 'a t = bool end)
       let make ~doc = Doc.add doc M.empty
     end
 
@@ -158,7 +158,7 @@ module Type = struct
         ('k, 'v, 'm) maplike
 
     and ('p, 'f) field =
-      { meta : 'f Meta.t;
+      { meta : ('p, 'f) field Meta.t;
         name : string;
         gist : 'f t;
         project : ('p -> 'f);
@@ -937,12 +937,9 @@ module Fun = struct
 
       and pp_product : type p. p Type.Gist.product -> p fmt = fun p ppf v ->
         let pp_dim ~sep dim ppf p =
-          match Meta.Fmt.find (Type.Gist.Field.meta dim) with
-          | Some pp when pp == Meta.Fmt.ignore -> () (* avoid sep *)
-          | Some pp ->
-              let v = Type.Gist.Field.project dim p in
-              (if sep then pp_comma ppf ()); pp ppf v
-          | None ->
+          match Type.Gist.Meta.Ignore.find (Type.Gist.Field.meta dim) with
+          | Some true -> () (* avoid sep *)
+          | Some false | None ->
               let g = Type.Gist.Field.gist dim in
               let v = Type.Gist.Field.project dim p in
               (if sep then pp_comma ppf ()); pp g ppf v
@@ -960,12 +957,9 @@ module Fun = struct
 
       and pp_record : type r a. r Type.Gist.record -> r fmt = fun r ppf v ->
         let pp_field ~sep f ppf v =
-          match Meta.Fmt.find (Type.Gist.Field.meta f) with
-          | Some pp when pp == Meta.Fmt.ignore -> () (* avoid sep *)
-          | Some pp ->
-              let v = Type.Gist.Field.project f v in
-              (if sep then pp_semi_cut ppf ()); pp ppf v
-          | None ->
+          match Type.Gist.Meta.Ignore.find (Type.Gist.Field.meta f) with
+          | Some true -> () (* avoid sep *)
+          | Some false | None ->
               let g = Type.Gist.Field.gist f in
               let v = Type.Gist.Field.project f v in
               (if sep then pp_semi_cut ppf ());
@@ -1074,9 +1068,12 @@ module Fun = struct
               loop fs v0 v1 &&
               let v0 = Type.Gist.Field.project f v0 in
               let v1 = Type.Gist.Field.project f v1 in
+              equal (Type.Gist.Field.gist f) v0 v1
+              (* TODO I think it makes sense to comment this but review
               match Meta.Equal.find (Type.Gist.Field.meta f) with
-              | None -> equal (Type.Gist.Field.gist f) v0 v1
-              | Some equal -> equal v0 v1
+              | None ->
+                 | Some equal -> equal v0 v1
+                 *)
         in
         loop (Type.Gist.Product.fields p) v0 v1
 
@@ -1179,9 +1176,11 @@ module Fun = struct
               if cmp <> 0 then cmp else
               let v0 = Type.Gist.Field.project f v0 in
               let v1 = Type.Gist.Field.project f v1 in
+              compare (Type.Gist.Field.gist f) v0 v1
+              (* TODO
               match Meta.Compare.find (Type.Gist.Field.meta f) with
-              | None -> compare (Type.Gist.Field.gist f) v0 v1
-              | Some compare -> compare v0 v1
+              | None ->
+              | Some compare -> compare v0 v1 *)
         in
         loop (Type.Gist.Product.fields p) v0 v1
 

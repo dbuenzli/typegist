@@ -111,7 +111,10 @@ Here are a few salient points:
     {- Add optional parameters to easily specify [Meta.Doc] ?}
    {- The semantics of {!Typegist.Type.Gist.name} depends on the
       context. Should we split [name] into [case_name] and
-      [type_name]}}
+      [type_name]}
+   {- Clarify the meta of fields. Note all other metas
+      are tied to types and their values. Fields are not
+      types.}}
 
     {2:meta_placement Meta placement}
 
