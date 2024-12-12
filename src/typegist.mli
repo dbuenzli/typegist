@@ -709,6 +709,10 @@ module Type : sig
       val is_singleton : 'p product -> bool
       (** [is_singleton p] is [true] if [p] has a single field. *)
 
+      val rec_field_count : 'p product -> int
+      (** [rec_field_count c] is the number of recursive fields
+          in [c]. *)
+
       val with_meta : 'p Meta.t -> 'p product -> 'p product
       (** [with_meta meta p] is [p] with meta [meta]. *)
 
@@ -793,38 +797,6 @@ module Type : sig
       type 'v case = 'v product
       (** The type for representing variant cases of a variant of
           type ['v]. *)
-
-      (** Variant cases.
-
-          Variant cases are {{!module-Product}products} whose name
-          is the case name. *)
-      module Case : sig
-
-        (** {1:products Variant cases} *)
-
-        type 'v t = 'v case
-        (** The type for products. *)
-
-        val make : ?meta:'v Meta.t -> string -> ('v, 'v) fields -> 'v case
-        (** [make fields] is a product with fields [fields]. [name] is
-            optional, it defaults to [""]. *)
-
-        val meta : 'v case -> 'v Meta.t
-        (** [meta c] is the metadata of [c]. *)
-
-        val name : 'v case -> string
-        (** [name c] is the case name of [c] (if any). *)
-
-        val fields : 'v case -> ('v, 'v) fields
-        (** [fields c] are the fields of [c]. *)
-
-        val is_empty : 'v case -> bool
-        (** [is_empty c] is [true] if the case has no arguments. *)
-
-        val rec_field_count : 'v case -> int
-        (** [rec_field_count c] is the number of recursive fields
-            in [c]. *)
-      end
 
       (** {1:variants Variants} *)
 

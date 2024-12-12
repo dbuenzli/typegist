@@ -512,6 +512,13 @@ module Type = struct
       let is_empty (p : 'v t) = Fields.is_empty p.fields
       let is_singleton (p : 'v t) = Fields.is_singleton p.fields
       let with_meta meta (p : 'v t) = { p with meta }
+      let rec_field_count (c : 'v t) =
+          let rec loop : type p a. int -> (p, a) fields -> int =
+            fun acc fs -> match fs with
+            | Ctor _ -> acc
+            | App (c, f) -> loop (acc + match f.gist with Rec _ -> 1 | _ -> 0) c
+          in
+          loop 0 c.fields
 
       type ('p, 'ctor) cons =
         { meta : 'p Meta.t; type_name : string; fields : ('p, 'ctor) fields }
@@ -563,26 +570,7 @@ module Type = struct
     (* Variants *)
 
     module Variant = struct
-      (* FIXME perhaps do the records simplification here.
-         i.e. mostly remove the [Case] module. *)
-
       type 'v case = 'v product
-      module Case = struct
-        type 'v t = 'v case
-        let make ?(meta = Meta.empty) name fields = { meta; name; fields }
-        let meta (c : 'v t) = c.meta
-        let name (c : 'v t) = c.name
-        let fields (c : 'v t) = c.fields
-        let is_empty = Product.is_empty
-        let rec_field_count (c : 'v t) =
-          let rec loop : type p a. int -> (p, a) fields -> int =
-            fun acc fs -> match fs with
-            | Ctor _ -> acc
-            | App (c, f) -> loop (acc + match f.gist with Rec _ -> 1 | _ -> 0) c
-          in
-          loop 0 c.fields
-      end
-
       let case ?meta name ctor = Product.cons ?meta ~type_name:name ctor
       let finish_case = Product.finish
 
@@ -846,11 +834,11 @@ module Type = struct
       | Variant v ->
           if ref && Variant.type_name v <> ""
           then pf ppf "%s" (Variant.type_name v) else
-          let pp_case ppf c = match Variant.Case.is_empty c with
-          | true -> pf ppf "@[<2>| %s@]" (Variant.Case.name c)
+          let pp_case ppf c = match Product.is_empty c with
+          | true -> pf ppf "@[<2>| %s@]" (Product.name c)
           | false ->
               let pp_prod = product ~ref:false ~paren:false in
-              pf ppf "@[<2>| %s of %a@]" (Variant.Case.name c) pp_prod c
+              pf ppf "@[<2>| %s of %a@]" (Product.name c) pp_prod c
           in
           pf ppf "@[<v>%a@]" (Format.pp_print_list pp_case) (Variant.cases v)
 
@@ -1028,8 +1016,8 @@ module Fun = struct
       | sum ->
           let variant = Type.Gist.Sum.to_variant sum in
           let case = Type.Gist.Variant.project variant v in
-          let name = Type.Gist.Variant.Case.name case in
-          if Type.Gist.Variant.Case.is_empty case
+          let name = Type.Gist.Product.name case in
+          if Type.Gist.Product.is_empty case
           then pp_string ppf name
           else pf ppf "%s %a" name (pp_product case) v
 
@@ -1375,7 +1363,7 @@ module Fun = struct
               in
               f v
         in
-        rand_fields (Type.Gist.Variant.Case.fields c)
+        rand_fields (Type.Gist.Product.fields c)
 
       and rand_sum : type s. s Type.Gist.sum -> s rand =
         fun s ~size st ~bound -> match s with
@@ -1387,7 +1375,7 @@ module Fun = struct
             let rec case_distrib count acc = function
             | [] -> count, acc
             | c :: cs ->
-                match Type.Gist.Variant.Case.rec_field_count c with
+                match Type.Gist.Product.rec_field_count c with
                 | 0 -> case_distrib (count + 1) ((bound, c) :: acc) cs
                 | n when bound <= 0 -> case_distrib count acc cs (* no rec *)
                 | n ->
