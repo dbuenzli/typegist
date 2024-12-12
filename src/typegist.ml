@@ -126,6 +126,9 @@ module Type = struct
 
     (* Type representation *)
 
+    type type_name = string
+    type case_name = string
+
     type 'a scalar =
     | Unit : unit Meta.t -> unit scalar
     | Bool : bool Meta.t -> bool scalar

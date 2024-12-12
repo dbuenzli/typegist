@@ -11,7 +11,7 @@ type follows the [M.t] convention use [M.typegist].
 
 An OCaml record is {{!Typegist.Type.Gist.record_ops}described} by
 naming a product of {{!Typegist.Type.Gist.field}named fields} with
-{!Typegist.Type.Gist.record}.
+{!Typegist.Type.Gist.val-record}.
 
 {[
 module Person = struct

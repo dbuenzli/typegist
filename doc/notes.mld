@@ -109,7 +109,7 @@ Here are a few salient points:
        naive. Both {!Fun.Generic.compare} and {!Typegist.Fun.Generic.random} are
        quite inefficient.}
     {- Add optional parameters to easily specify [Meta.Doc] ?}
-   {- The semantics of {!Typegist.Type.Gist.name} depends on the
+   {- The semantics of {!Typegist.Type.Gist.Product.name} depends on the
       context. Should we split [name] into [case_name] and
       [type_name]}
    {- Clarify the meta of fields. Note all other metas

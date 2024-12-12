@@ -260,6 +260,14 @@ module Type : sig
       module Ignore : KEY with type 'a value = bool
     end
 
+    type type_name = string
+    (** The type for type names as accessed from the top level scope. E.g
+        [Buffer.t]. *)
+
+    type case_name = string
+    (** The type for case constructor names as accessed from the top level
+        scope. E.g. [Either.Left]. *)
+
     type 'a scalar =
     | Unit : unit Meta.t -> unit scalar
     | Bool : bool Meta.t -> bool scalar
@@ -338,7 +346,7 @@ module Type : sig
     | Arraylike : ('elt, 'arr) arraylike -> 'arr t
     | Maplike : ('k, 'v, 'm) maplike -> 'm t
     | Product : 'p product -> 'p t
-    | Record : 'r product -> 'r t
+    | Record : 'r record -> 'r t
     | Sum : 's sum -> 's t
     | Func : ('a, 'b) func -> ('a -> 'b) t
     | Abstract : 'a abstract -> 'a t
@@ -349,7 +357,7 @@ module Type : sig
 
     (** {1:constructors Constructors and operations} *)
 
-    val todo : ?type_name:string -> unit -> 'a t
+    val todo : ?type_name:type_name -> unit -> 'a t
     (** [todo ~type_name ()] is a stub gist. Generic functions
         will raise [Invalid_argument] when they hit the stub. *)
 
@@ -376,7 +384,7 @@ module Type : sig
       val zero : 'a scalar -> 'a
       (** [zero s] is a zero value for [s]. *)
 
-      val type_name : 'a scalar -> string
+      val type_name : 'a scalar -> type_name
       (** [type_name s] is the OCaml type name of the scalar of [s]. *)
 
       val with_meta : 'a Meta.t -> 'a scalar -> 'a scalar
@@ -453,7 +461,7 @@ module Type : sig
       val meta : ('elt, 'arr) arraylike -> 'arr Meta.t
       (** [meta a] is the metadata of [a]. *)
 
-      val type_name : ('elt, 'arr) arraylike -> string
+      val type_name : ('elt, 'arr) arraylike -> type_name
       (** [type_name a] is the type name of [a]. *)
 
       val elt : ('elt, 'arr) t -> 'elt gist
@@ -472,16 +480,16 @@ module Type : sig
     end
 
     val string_as_bytes : string t
-    (** [string_as_bytes] is [Arraylike (String (Meta.empty, `Bytes, char))]. *)
+    (** [string_as_bytes] is [Arraylike (String (Meta.empty, `Bytes))]. *)
 
     val string_as_utf_8 : string t
-    (** [string_as_utf_8] is [Arraylike (String (Meta.empty, `Utf_8, char))]. *)
+    (** [string_as_utf_8] is [Arraylike (String (Meta.empty, `Utf_8))]. *)
 
     val bytes_as_bytes : bytes t
-    (** [bytes_as_bytes] is [Arraylike (Bytes (Meta.empty, char))]. *)
+    (** [bytes_as_bytes] is [Arraylike (Bytes (Meta.empty, `Bytes))]. *)
 
     val bytes_as_utf_8 : bytes t
-    (** [bytes_as_utf_8] is [Arraylike (Bytes (Meta.empty, `Utf_8, char))]. *)
+    (** [bytes_as_utf_8] is [Arraylike (Bytes (Meta.empty, `Utf_8))]. *)
 
     val array : ?meta:'elt array Meta.t -> 'elt t -> 'elt array t
     (** [array] represents arrays with elements of given representation. *)
@@ -517,7 +525,7 @@ module Type : sig
       val meta : ('k, 'v, 'm) maplike -> 'm Meta.t
       (** [meta m] is the metadata of [m]. *)
 
-      val type_name : ('k, 'v, 'm) maplike -> string
+      val type_name : ('k, 'v, 'm) maplike -> type_name
       (** [type_name m] is the type name of [m]. *)
 
       val key : ('k, 'v, 'm) maplike -> 'k gist
@@ -689,16 +697,17 @@ module Type : sig
           {- [fields] the ordered sequence of fields of the product.}
           {- [meta] is the metadata (defaults to {!Meta.empty}).}
           {- [name] the name of the product (defaults to [""]). For records
-             this is the type name. For variant cases this is the case name.
-             For products, if non empty, this is the name of a type
-             abbreviation.}} *)
+             this is the {{!type_name}type name}. For variant cases this is
+             the case constructor name. For products, if non empty, this is
+             the {{!type_name}type name} of a type abbreviation.}} *)
 
       val meta : 'p product -> 'p Meta.t
       (** [meta p] is the metadata of [p]. *)
 
       val name : 'p product -> string
       (** [name p] is the name of [p] (if any). For records or products this
-          is the type name for variant cases this is the case name. *)
+          is the {{!type_name}type name} for variant cases this is
+          the {{!case_name}case name}. *)
 
       val fields : 'p product -> ('p, 'p) fields
       (** [fields p] are the fields of [p]. *)
@@ -744,7 +753,8 @@ module Type : sig
     (** [dim] is like {!field} but is a nameless field. *)
 
     val product :
-      ?meta:'p Meta.t -> ?type_name:string -> 'ctor -> ('p, 'ctor) Product.cons
+      ?meta:'p Meta.t -> ?type_name:type_name -> 'ctor ->
+      ('p, 'ctor) Product.cons
     (** [product ctor] is a product constructed with [ctor] to be satured
         with {!Type.Gist.field} or {!Type.Gist.dim}. *)
 
@@ -753,17 +763,18 @@ module Type : sig
         a {!constructor-Product} gist value. *)
 
     val p2 :
-      ?meta:('a * 'b) Meta.t -> ?type_name:string -> 'a t -> 'b t -> ('a * 'b) t
+      ?meta:('a * 'b) Meta.t -> ?type_name:type_name -> 'a t -> 'b t ->
+      ('a * 'b) t
     (** [p2] represents pairs with given dimensions types. *)
 
     val p3 :
-      ?meta:('a * 'b *'c) Meta.t -> ?type_name:string -> 'a t -> 'b t -> 'c t ->
-      ('a * 'b * 'c) t
+      ?meta:('a * 'b *'c) Meta.t -> ?type_name:type_name ->
+      'a t -> 'b t -> 'c t -> ('a * 'b * 'c) t
     (** [p3] represents triplets with given dimensions types. *)
 
     val p4 :
-      ?meta:('a * 'b * 'c * 'd) Meta.t -> ?type_name:string -> 'a t -> 'b t ->
-      'c t -> 'd t -> ('a * 'b * 'c * 'd) t
+      ?meta:('a * 'b * 'c * 'd) Meta.t -> ?type_name:type_name ->
+      'a t -> 'b t -> 'c t -> 'd t -> ('a * 'b * 'c * 'd) t
     (** [p4] represents quadruplets with given dimensions types. *)
 
    (** {2:record_ops Records}
@@ -774,10 +785,11 @@ module Type : sig
        combinators to build them. See
        {{!page-cookbook.describing_records}an example}. *)
 
-    val record : ?meta:'r Meta.t -> string -> 'ctor -> ('r, 'ctor) Product.cons
-    (** [record name ctor] is a record constructed with [ctor] to be
-        satured with {!Type.Gist.field}. [name] is the record type name
-        as seen from the top level scope. *)
+    val record :
+      ?meta:'r Meta.t -> type_name -> 'ctor -> ('r, 'ctor) Product.cons
+    (** [record type_name ctor] is a record constructed with [ctor] to be
+        satured with {!Type.Gist.field}. [type_name] is the record
+        {{!type_name}type name}. *)
 
     val finish_record : ('r, 'r) Product.cons -> 'r t
     (** [finish_record f] finishes the record to yield a {!constructor-Record}
@@ -796,7 +808,7 @@ module Type : sig
 
       type 'v case = 'v product
       (** The type for representing variant cases of a variant of
-          type ['v]. *)
+          type ['v]. The {!Product.name} is the constructor name. *)
 
       (** {1:variants Variants} *)
 
@@ -814,7 +826,7 @@ module Type : sig
       val meta : 'v variant -> 'v Meta.t
       (** [meta v] is the metadata of [v]. *)
 
-      val type_name : 'v variant -> string
+      val type_name : 'v variant -> type_name
       (** [type_name v] is the type name of [v]. *)
 
       val project : 'v variant -> 'v -> 'v case
@@ -852,8 +864,8 @@ module Type : sig
     end
 
     val case :
-      ?meta:'v Meta.t -> string -> 'ctor -> ('v, 'ctor) Product.cons
-    (** [case name ctor] is a variant case named [name] constructed
+      ?meta:'v Meta.t -> case_name -> 'ctor -> ('v, 'ctor) Product.cons
+    (** [case case_name ctor] is a variant case named [case_name] constructed
         with [ctor] to be satured with {!Type.Gist.dim} or
         {!Type.Gist.field} (for inline records). [name] is the
         OCaml constructor name of the case as accessed from the
@@ -867,9 +879,9 @@ module Type : sig
     (** [case0 name v] is [case name v |> finish_case]. *)
 
     val variant :
-      ?meta:'v Meta.t -> string -> ('v -> 'v Variant.case) ->
+      ?meta:'v Meta.t -> case_name -> ('v -> 'v Variant.case) ->
       'v Variant.case list -> 'v t
-    (** [variant type_name project cases] is a variant decontructed by
+    (** [variant case_name project cases] is a variant decontructed by
         [project] and whose cases are enumerated in [cases].
         [type_name] is the OCaml type name as accesed from the top
         level scope. This is {!Variant.make} wrapped in a
@@ -1038,7 +1050,7 @@ module Type : sig
       val meta : 'a abstract -> 'a Meta.t
       (** [meta a] is the metadata of [a]. *)
 
-      val type_name : 'a abstract -> string
+      val type_name : 'a abstract -> type_name
       (** [type_name a] is the type name of [a]. *)
 
       val reprs : 'a abstract -> 'a repr list
@@ -1050,7 +1062,7 @@ module Type : sig
     end
 
     val abstract :
-      ?meta:'a Meta.t -> string -> 'a Abstract.repr list -> 'a t
+      ?meta:'a Meta.t -> type_name -> 'a Abstract.repr list -> 'a t
     (** [abstract ~meta name reprs] represents an abstract type named
         [type_name] with public representations [reprs]. This is
         {!Abstract.make} wrapped in an {!constructor-Abstract} gist value. *)
@@ -1063,7 +1075,7 @@ module Type : sig
     val with_meta : 'a Meta.t -> 'a t -> 'a t
     (** [with_meta m g] is [g] with meta [meta]. *)
 
-    val type_name : 'a t -> string
+    val type_name : 'a t -> type_name
     (** [type_name g] is [g]'s type name. *)
 
     val pp_type : Format.formatter -> 'a t -> unit
