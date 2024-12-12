@@ -140,9 +140,8 @@ module Type = struct
     type bytes_encoding = [ `Bytes | `Utf_8 ]
 
     type ('elt, 'a) arraylike =
-    | String : string Meta.t * bytes_encoding * char t ->
-        (char, string) arraylike
-    | Bytes :  bytes Meta.t * bytes_encoding * char t -> (char, bytes) arraylike
+    | String : string Meta.t * bytes_encoding -> (char, string) arraylike
+    | Bytes :  bytes Meta.t * bytes_encoding -> (char, bytes) arraylike
     | Array : 'elt array Meta.t * 'elt t -> ('elt, 'elt array) arraylike
     | Bigarray1 :
         ('elt, 'b, 'c) Bigarray.Array1.t Meta.t *
@@ -314,16 +313,16 @@ module Type = struct
       type 'a gist = 'a t
       type ('elt, 'arr) t = ('elt, 'arr) arraylike
       let meta : type elt arr. (elt, arr) arraylike -> arr Meta.t = function
-      | String (m, _, _) -> m | Bytes (m, _, _) -> m | Array (m, _) -> m
+      | String (m, _) -> m | Bytes (m, _) -> m | Array (m, _) -> m
       | Bigarray1 (m, _, _, _) -> m | Array_module (m, _, _) -> m
 
       let type_name : type elt arr. (elt, arr) arraylike -> string = function
-      | String (_, _, _) -> "string" | Bytes (_, _, _) -> "bytes"
+      | String (_, _) -> "string" | Bytes (_, _) -> "bytes"
       | Array (_, _) -> "array" | Bigarray1 (_, _, _, _) -> "bigarray1"
       | Array_module (_, (module A), _) -> A.type_name
 
       let elt : type elt arr. (elt, arr) arraylike -> elt gist = function
-      | String (_, _, elt) -> elt | Bytes (_, _, elt) -> elt
+      | String (_, _) -> char | Bytes (_, _) -> char
       | Array (_, elt) -> elt | Bigarray1 (_, _, _, elt) -> elt
       | Array_module (_, _, elt) -> elt
 
@@ -332,8 +331,8 @@ module Type = struct
         (elt, arr) arraylike
       =
       fun m a -> match a with
-      | String (_, e, elt) -> String (m, e, elt)
-      | Bytes (_, e, elt) -> Bytes (m, e, elt)
+      | String (_, e) -> String (m, e)
+      | Bytes (_, e) -> Bytes (m, e)
       | Array (_, elt) -> Array (m, elt)
       | Bigarray1 (_, k, l, elt) -> Bigarray1 (m, k, l, elt)
       | Array_module (_, a, elt) -> Array_module (m, a, elt)
@@ -404,16 +403,16 @@ module Type = struct
         type elt arr. (elt, arr) arraylike -> (elt, arr) array_module =
         function
         | Array_module (_, m, _) -> m
-        | String (_, _, _) -> (module String_array_module)
-        | Bytes (_, _, _) -> (module Bytes_array_module)
+        | String (_, _) -> (module String_array_module)
+        | Bytes (_, _) -> (module Bytes_array_module)
         | Array (_, elt) -> array_array_module elt
         | Bigarray1 (_, k, l, elt) -> bigarray1_array_module k l elt
     end
 
-    let string_as_bytes = Arraylike (String (Meta.empty, `Bytes, char))
-    let string_as_utf_8 = Arraylike (String (Meta.empty, `Utf_8, char))
-    let bytes_as_bytes = Arraylike (Bytes (Meta.empty, `Bytes, char))
-    let bytes_as_utf_8 = Arraylike (Bytes (Meta.empty, `Utf_8, char))
+    let string_as_bytes = Arraylike (String (Meta.empty, `Bytes))
+    let string_as_utf_8 = Arraylike (String (Meta.empty, `Utf_8))
+    let bytes_as_bytes = Arraylike (Bytes (Meta.empty, `Bytes))
+    let bytes_as_utf_8 = Arraylike (Bytes (Meta.empty, `Utf_8))
     let array ?(meta = Meta.empty) g = Arraylike (Array (meta, g))
     let bigarray1 ?(meta = Meta.empty) kind layout g =
       Arraylike (Bigarray1 (meta, kind, layout, g))
@@ -792,8 +791,8 @@ module Type = struct
          out in the docs. *)
       let rec arraylike : type a elt. ref:bool -> (a, elt) arraylike fmt =
         fun ~ref ppf -> function
-        | String (_, _, _) -> pp_string ppf "string"
-        | Bytes (_, _, _) -> pp_string ppf "bytes"
+        | String (_, _) -> pp_string ppf "string"
+        | Bytes (_, _) -> pp_string ppf "bytes"
         | Array (_, elt) -> pf ppf "@[@[%a@] array@]" (pp ~ref:true) elt
         | Bigarray1 (_, _, _, elt) ->
             pf ppf "@[@[%a@] Bigarray.Array1.t@]" (pp ~ref:true) elt
@@ -959,10 +958,10 @@ module Fun = struct
 
       let rec pp_arraylike : type elt a. (elt, a) Type.Gist.arraylike -> a fmt =
       fun a ppf v -> match a with
-      | Bytes (_, `Utf_8, _) -> pf ppf "%S" (Bytes.unsafe_to_string v)
-      | Bytes (_, `Bytes, _) -> pp_hex ppf (Bytes.unsafe_to_string v)
-      | String (_,`Utf_8, _) -> pf ppf "%S" v
-      | String (_, `Bytes, _) -> pp_hex ppf v
+      | Bytes (_, `Utf_8) -> pf ppf "%S" (Bytes.unsafe_to_string v)
+      | Bytes (_, `Bytes) -> pp_hex ppf (Bytes.unsafe_to_string v)
+      | String (_,`Utf_8) -> pf ppf "%S" v
+      | String (_, `Bytes) -> pp_hex ppf v
       | Array (_, g) -> pp_array ~kind:"" Array.iter (pp g) ppf v
       | Bigarray1 (_, _, _, g) ->
           pp_array ~kind:"ba" Type.Gist.Arraylike.ba_iter (pp g) ppf v
@@ -1076,10 +1075,8 @@ module Fun = struct
       let rec equal_arraylike :
         type elt arr. (elt, arr) Type.Gist.arraylike -> arr eq = fun a v0 v1 ->
         match a with
-        | String (_, _, elt) when not (Meta.Equal.mem (Type.Gist.meta elt)) ->
-            String.equal v0 v1
-        | Bytes (_, _, elt) when not (Meta.Equal.mem (Type.Gist.meta elt)) ->
-            Bytes.equal v0 v1
+        | String (_, _) -> String.equal v0 v1
+        | Bytes (_, _) -> Bytes.equal v0 v1
         | a ->
             (* FIXME there's room for improvement and clarifications
                here, e.g. for using the bare bigarrays comparison *)
@@ -1186,12 +1183,8 @@ module Fun = struct
       let rec compare_arraylike :
         type elt arr. (elt, arr) Type.Gist.arraylike -> arr cmp = fun a v0 v1 ->
         match a with
-        | String (_, _, elt) when not (Meta.Equal.mem (Type.Gist.meta elt)) ->
-            (* FIXME people would likely expect the comparison of elt
-               being used. This a good argument to remove elt. *)
-            String.compare v0 v1
-        | Bytes (_, _, elt) when not (Meta.Equal.mem (Type.Gist.meta elt)) ->
-            Bytes.compare v0 v1
+        | String (_, _) -> String.compare v0 v1
+        | Bytes (_, _) -> Bytes.compare v0 v1
         | a ->
             (* FIXME there's room for improvement and clarifications
                here, e.g. for using the bare bigarrays comparison *)

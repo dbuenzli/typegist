@@ -278,10 +278,8 @@ module Type : sig
         OCaml [bytes] and [string] values. *)
 
     type ('elt, 'arr) arraylike =
-    | String : string Meta.t * bytes_encoding * char t ->
-        (char, string) arraylike
-    | Bytes : bytes Meta.t * bytes_encoding * char t ->
-        (char, bytes) arraylike
+    | String : string Meta.t * bytes_encoding -> (char, string) arraylike
+    | Bytes : bytes Meta.t * bytes_encoding -> (char, bytes) arraylike
     | Array : 'elt array Meta.t * 'elt t -> ('elt, 'elt array) arraylike
     | Bigarray1 :
         ('elt, 'b, 'c) Bigarray.Array1.t Meta.t *
