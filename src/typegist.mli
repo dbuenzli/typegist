@@ -251,7 +251,7 @@ module Type : sig
       (** [Key (V)] is a new key with values of type ['a V.t]. *)
       module Key (V : VALUE) : KEY with type 'a value = 'a V.t
 
-      (** {1:std_keys Standard keys. *)
+      (** {1:std_keys Standard keys} *)
 
       (** [Doc] is a key for a doc string. *)
       module Doc : KEY with type 'a value = string
@@ -273,9 +273,15 @@ module Type : sig
     (** The type for representing scalar types of type ['a].
         See {{!scalar_ops}scalars}. *)
 
+    type bytes_encoding = [ `Bytes | `Utf_8 ]
+    (** The type for specifying the two standard interpretations of
+        OCaml [bytes] and [string] values. *)
+
     type ('elt, 'arr) arraylike =
-    | String : string Meta.t * char t -> (char, string) arraylike
-    | Bytes : bytes Meta.t * char t -> (char, bytes) arraylike
+    | String : string Meta.t * bytes_encoding * char t ->
+        (char, string) arraylike
+    | Bytes : bytes Meta.t * bytes_encoding * char t ->
+        (char, bytes) arraylike
     | Array : 'elt array Meta.t * 'elt t -> ('elt, 'elt array) arraylike
     | Bigarray1 :
         ('elt, 'b, 'c) Bigarray.Array1.t Meta.t *
@@ -467,11 +473,17 @@ module Type : sig
           function raises [Invalid_argument] in the resulting module. *)
     end
 
-    val string : string t
-    (** [string] is [Arraylike (String (Meta.empty, char))]. *)
+    val string_as_bytes : string t
+    (** [string_as_bytes] is [Arraylike (String (Meta.empty, `Bytes, char))]. *)
 
-    val bytes : bytes t
-    (** [bytes] is [Arraylike (Bytes (Meta.empty, char))]. *)
+    val string_as_utf_8 : string t
+    (** [string_as_utf_8] is [Arraylike (String (Meta.empty, `Utf_8, char))]. *)
+
+    val bytes_as_bytes : bytes t
+    (** [bytes_as_bytes] is [Arraylike (Bytes (Meta.empty, char))]. *)
+
+    val bytes_as_utf_8 : bytes t
+    (** [bytes_as_utf_8] is [Arraylike (Bytes (Meta.empty, `Utf_8, char))]. *)
 
     val array : ?meta:'elt array Meta.t -> 'elt t -> 'elt array t
     (** [array] represents arrays with elements of given representation. *)
@@ -662,6 +674,9 @@ module Type : sig
         result of type ['p]. *)
 
     val app : ('p, 'f -> 'a) fields -> ('p, 'f) field -> ('p, 'a) fields
+    (** [app f arg] is [App (f, app)] *)
+
+    val arg : ('p, 'f) field -> ('p, 'f -> 'a) fields -> ('p, 'a) fields
     (** [app f arg] is [App (f, app)] *)
 
     val ( * ) : ('p, 'f -> 'a) fields -> ('p, 'f) field -> ('p, 'a) fields

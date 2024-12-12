@@ -16,7 +16,7 @@ module Person = struct
   open Typegist
 
   let gist =
-    let name = Type.Gist.(field "name" string) name in
+    let name = Type.Gist.(field "name" string_as_utf_8) name in
     let age = Type.Gist.(field "age" (option int)) age in
     Type.Gist.(record "person" @@ ctor make * name * age)
 

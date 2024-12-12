@@ -23,7 +23,7 @@ module Person = struct
   open Typegist
 
   let gist =
-    let name = Type.Gist.(field "name" string) name in
+    let name = Type.Gist.(field "name" string_as_utf_8) name in
     let age = Type.Gist.(field "age" (option int)) age in
     Type.Gist.(record "person" @@ ctor make * name * age)
 
@@ -200,9 +200,9 @@ end = struct
   let email p = p.email
   let phone p = p.phone
   let type_gist =
-    let name = Type.Gist.(field "name" string name) in
-    let email = Type.Gist.(field "email" string email) in
-    let phone = Type.Gist.(field "phone" (option string) phone) in
+    let name = Type.Gist.(field "name" string_as_utf_8 name) in
+    let email = Type.Gist.(field "email" string_as_utf_8 email) in
+    let phone = Type.Gist.(field "phone" (option string_as_utf_8) phone) in
     let repr_v0 = (* First version had no phone numbers *)
       let to_v1 name email = { name; email; phone = None } in
       let g = Type.Gist.(record "person" @@ ctor to_v1 * name * email) in

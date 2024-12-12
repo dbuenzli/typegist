@@ -14,13 +14,13 @@ let test_pair () =
     let snd = Type.Gist.(dim gsnd snd) in
     Type.Gist.(product @@ ctor pair * fst * snd)
   in
-  let pair = pair_gist Type.Gist.int Type.Gist.string in
+  let pair = pair_gist Type.Gist.int Type.Gist.string_as_utf_8 in
   Test.log " type: @[%a@]" Type.Gist.pp_type pair;
   Test.log "value: @[%a@]" (Fun.Generic.pp pair) (3, "hey")
 
 let test_func () =
   Test.test "function representation" @@ fun () ->
-  let func = Type.Gist.(string @-> int) in
+  let func = Type.Gist.(string_as_utf_8 @-> int) in
   let ret_pair = Type.Gist.(int @-> int @-> p2 int int) in
   let pair x y = x, y in
   Test.log "   value String.length: @[%a@]" (Fun.Generic.pp func) String.length;
@@ -80,9 +80,9 @@ let test_abstract_person () =
     let email p = p.email
     let phone p = p.phone
     let type_gist =
-      let name = Type.Gist.(field "name" string name) in
-      let email = Type.Gist.(field "email" string email) in
-      let phone = Type.Gist.(field "phone" (option string) phone) in
+      let name = Type.Gist.(field "name" string_as_utf_8 name) in
+      let email = Type.Gist.(field "email" string_as_utf_8 email) in
+      let phone = Type.Gist.(field "phone" (option string_as_utf_8) phone) in
       let repr_v0 = (* First version had no phone numbers *)
         let to_v1 name email = { name; email; phone = None } in
         let g = Type.Gist.(record "person" @@ ctor to_v1 * name * email) in
@@ -106,7 +106,7 @@ let test_maplike () =
   let module String_map = Map.Make (String) in
   let imap = String_map.(empty |> add "fst" 1 |> add "snd" 2) in
   let module M = Type.Gist.Maplike.Map_module_of_map (Int) (String_map) in
-  let g = Type.Gist.(map_module (module M) string int) in
+  let g = Type.Gist.(map_module (module M) string_as_utf_8 int) in
   Test.log " type: @[%a@]" Type.Gist.pp_type g;
   Test.log "value: @[%a@]" (Fun.Generic.pp g) imap
 
