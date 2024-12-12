@@ -9,10 +9,10 @@ open Typegist
 let test_pair () =
   Test.test "pairs" @@ fun () ->
   let pair_gist gfst gsnd =
-    let pair x y = (x, y) in
-    let fst = Type.Gist.(dim gfst fst) in
-    let snd = Type.Gist.(dim gsnd snd) in
-    Type.Gist.(product @@ ctor pair * fst * snd)
+    Type.Gist.product (fun x y -> (x, y))
+    |> Type.Gist.dim gfst fst
+    |> Type.Gist.dim gsnd snd
+    |> Type.Gist.finish_product
   in
   let pair = pair_gist Type.Gist.int Type.Gist.string_as_utf_8 in
   Test.log " type: @[%a@]" Type.Gist.pp_type pair;
@@ -37,20 +37,17 @@ let test_btree () =
     let type_gist gel =
       let rec g = lazy begin
         let g = Type.Gist.rec' g in
-        let empty_case = Type.Gist.(case "Empty" @@ ctor Empty) in
-        let node_ctor l v r = Node (l, v, r) in
-        let node_lproj = function Node (l, _, _) -> l | _ -> assert false in
-        let node_eproj = function Node (_, v, _) -> v | _ -> assert false in
-        let node_rproj = function Node (_, _, r) -> r | _ -> assert false in
-        let node_ldim = Type.Gist.(dim g node_lproj) in
-        let node_edim = Type.Gist.(dim gel node_eproj) in
-        let node_rdim = Type.Gist.(dim g node_rproj) in
+        let empty_case = Type.Gist.case0 "Btree.Empty" Empty in
         let node_case =
-          Type.Gist.case "Node" @@
-          Type.Gist.(ctor node_ctor * node_ldim * node_edim * node_rdim)
+          Type.Gist.case "Btree.Node" (fun l v r -> Node (l, v, r))
+          |> Type.Gist.dim g (function Node (l,_,_) -> l | _ -> assert false)
+          |> Type.Gist.dim gel (function Node (_,v,_) -> v | _ -> assert false)
+          |> Type.Gist.dim g (function Node (_,_,r) -> r | _ -> assert false)
+          |> Type.Gist.finish_case
         in
-        let t_proj = function Empty -> empty_case | Node _ -> node_case in
-        Type.Gist.variant "Btree.t" t_proj [empty_case; node_case]
+        Type.Gist.variant "Btree.t"
+          (function Empty -> empty_case | Node _ -> node_case)
+          [empty_case; node_case]
       end
       in
       Lazy.force g
@@ -67,7 +64,7 @@ let test_abstract_person () =
   Test.test "Person" @@ fun () ->
   let module Person : sig
     type t
-    val v : string -> string -> string option -> t
+    val make : string -> string -> string option -> t
     val name : t -> string
     val email : t -> string
     val phone : t -> string option
@@ -75,21 +72,40 @@ let test_abstract_person () =
     val pp : Format.formatter -> t -> unit
   end = struct
     type t = { name : string; email : string; phone : string option }
-    let v name email phone = { name; email; phone }
+    let make name email phone = { name; email; phone }
     let name p = p.name
     let email p = p.email
     let phone p = p.phone
+
+    let name_field =
+      Type.Gist.Field.make ~name:"name" Type.Gist.string_as_utf_8 name
+
+    let email_field =
+      Type.Gist.Field.make ~name:"email" Type.Gist.string_as_utf_8 email
+
+    let phone_field =
+      let phone_gist = Type.Gist.(option string_as_utf_8) in
+      Type.Gist.Field.make ~name:"phone" phone_gist phone
+
     let type_gist =
-      let name = Type.Gist.(field "name" string_as_utf_8 name) in
-      let email = Type.Gist.(field "email" string_as_utf_8 email) in
-      let phone = Type.Gist.(field "phone" (option string_as_utf_8) phone) in
       let repr_v0 = (* First version had no phone numbers *)
         let to_v1 name email = { name; email; phone = None } in
-        let g = Type.Gist.(record "person" @@ ctor to_v1 * name * email) in
+        let g =
+          Type.Gist.record "person" to_v1
+          |> Type.Gist.field' name_field
+          |> Type.Gist.field' email_field
+          |> Type.Gist.finish_record
+        in
         Type.Gist.Abstract.repr ~version:"v0" g Fun.id Fun.id
       in
       let repr_v1 = (* Added phone numbers *)
-        let g = Type.Gist.(record "person" @@ ctor v * name * email * phone) in
+        let g =
+          Type.Gist.record "person" make
+          |> Type.Gist.field' name_field
+          |> Type.Gist.field' email_field
+          |> Type.Gist.field' phone_field
+          |> Type.Gist.finish_record
+        in
         Type.Gist.Abstract.repr ~version:"v1" g Fun.id Fun.id
       in
       Type.Gist.abstract "person" [repr_v1; repr_v0]
@@ -97,7 +113,9 @@ let test_abstract_person () =
     let pp = Fun.Generic.pp type_gist
   end
   in
-  let p = Person.v "Bactrian" "bactrian@example.com" (Some "+XX XXX XX XX") in
+  let p =
+    Person.make "Bactrian" "bactrian@example.com" (Some "+XX XXX XX XX")
+  in
   Test.log " type: @[%a@]" Type.Gist.pp_type Person.type_gist;
   Test.log "value: @[%a@]" Person.pp p
 
@@ -116,13 +134,14 @@ let test_rec_meta () =
     let type_gist =
       let rec g = lazy begin
         let g = Type.Gist.rec' g in
-        let z = Type.Gist.(case "Z" @@ ctor Z) in
-        let succ_ctor n = Succ n in
-        let succ_proj = function Succ v -> v | _ -> assert false in
-        let succ = Type.Gist.(dim g succ_proj) in
-        let succ = Type.Gist.(case "Succ" @@ ctor succ_ctor * succ) in
+        let z = Type.Gist.case0 "M.Z" Z in
+        let succ =
+          Type.Gist.case "M.Succ" (fun n -> Succ n)
+          |> Type.Gist.dim g (function Succ v -> v | _ -> assert false)
+          |> Type.Gist.finish_case
+        in
         let project = function Z -> z | Succ _ -> succ in
-        Type.Gist.variant "nat" project [z; succ]
+        Type.Gist.variant "M.nat" project [z; succ]
       end
       in
       Lazy.force g
@@ -139,23 +158,23 @@ let test_rec () =
     let type_gist_one, type_gist_two =
       let rec gone = lazy begin
         let gtwo = Type.Gist.rec' gtwo in
-        let one_case = Type.Gist.(case "One" @@ ctor One) in
-        let to_two_ctor t = To_two t in
-        let to_two_proj = function To_two v -> v | _ -> assert false in
-        let to_two_dim = Type.Gist.(dim gtwo to_two_proj) in
-        let to_two_prod = Type.Gist.(ctor to_two_ctor * to_two_dim) in
-        let to_two_case = Type.Gist.case "To_two" to_two_prod in
+        let one_case = Type.Gist.case0 "M.One" One in
+        let to_two_case =
+          Type.Gist.case "M.To_two" (fun t -> To_two t)
+          |> Type.Gist.dim gtwo (function To_two v -> v | _ -> assert false)
+          |> Type.Gist.finish_case
+        in
         let one_proj = function One -> one_case | To_two _ -> to_two_case in
         Type.Gist.variant "M.one" one_proj [one_case; to_two_case]
       end
       and gtwo = lazy begin
         let gone = Type.Gist.rec' gone in
-        let two_case = Type.Gist.(case "Two" @@ ctor Two) in
-        let to_one_ctor t = To_one t in
-        let to_one_proj = function To_one v -> v | _ -> assert false in
-        let to_one_dim = Type.Gist.(dim gone to_one_proj) in
-        let to_one_prod = Type.Gist.(ctor to_one_ctor * to_one_dim) in
-        let to_one_case = Type.Gist.(case "To_one" @@ to_one_prod) in
+        let two_case = Type.Gist.case0 "Two" Two in
+        let to_one_case =
+          Type.Gist.case "To_one" (fun t -> To_one t)
+          |> Type.Gist.dim gone (function To_one v -> v | _ -> assert false)
+          |> Type.Gist.finish_case
+        in
         let two_proj = function Two -> two_case | To_one _ -> to_one_case in
         Type.Gist.variant "M.two" two_proj [two_case; to_one_case]
       end
@@ -194,15 +213,14 @@ let test_gadt () =
     let type_gist : v Type.Gist.t =
       let rec g = lazy begin
         let g = Type.Gist.rec' g in
-        let int_case = Type.Gist.(case "Int" @@ ctor (V Int)) in
-        let float_case = Type.Gist.(case "Float" @@ ctor (V Float)) in
-        let pair_ctor (V a) (V b) = V (Pair (a, b)) in
-        let pair_lproj = function V Pair (a, _) -> V a | _ -> assert false in
-        let pair_rproj = function V Pair (_, b) -> V b | _ -> assert false in
-        let pair_ldim = Type.Gist.dim g pair_lproj in
-        let pair_rdim = Type.Gist.dim g pair_rproj in
-        let pair_prod = Type.Gist.(ctor pair_ctor * pair_ldim * pair_rdim) in
-        let pair_case = Type.Gist.case "Pair" pair_prod in
+        let int_case = Type.Gist.case0 "Int" (V Int) in
+        let float_case = Type.Gist.case0 "Float" (V Float) in
+        let pair_case =
+          Type.Gist.case "Pair" (fun (V a) (V b) -> V (Pair (a, b)))
+          |> Type.Gist.dim g (function V Pair (a, _) -> V a | _ -> assert false)
+          |> Type.Gist.dim g (function V Pair (_, b) -> V b | _ -> assert false)
+          |> Type.Gist.finish_case
+        in
         let t_proj : type a. v -> v Type.Gist.Variant.case = function
         | V Int -> int_case | V Float -> float_case | V (Pair _) -> pair_case
         in

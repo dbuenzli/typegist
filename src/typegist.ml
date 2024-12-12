@@ -495,14 +495,11 @@ module Type = struct
 
     module Fields = struct
       type ('p, 'a) t = ('p, 'a) fields
+      let ctor f = Ctor f
+      let app f args = App (f, args)
       let is_empty = function Ctor _ -> true | _ -> false
       let is_singleton = function App (Ctor _, _) -> true | _ -> false
     end
-
-    let ctor f = Ctor f
-    let app fs a = App (fs, a)
-    let arg a fs = App (fs, a)
-    let ( * ) = app
 
     (* Products *)
 
@@ -516,44 +513,60 @@ module Type = struct
       let is_empty (p : 'v t) = Fields.is_empty p.fields
       let is_singleton (p : 'v t) = Fields.is_singleton p.fields
       let with_meta meta (p : 'v t) = { p with meta }
+
+      type ('p, 'ctor) cons =
+        { meta : 'p Meta.t; type_name : string; fields : ('p, 'ctor) fields }
+
+      let cons ?(meta = Meta.empty) ?(type_name = "") ctor =
+        { meta; type_name; fields = Ctor ctor }
+
+      let finish cons = make ~meta:cons.meta ~name:cons.type_name cons.fields
     end
 
-    let dim ?meta ?name ?inject ?default gist project =
-      Field.make ?meta ?name ?inject ?default gist project
+    let field' f (p : ('p, 'ctor) Product.cons) =
+      { p with Product.fields = App (p.fields, f) }
 
-    let product ?meta ?type_name:name fields =
-      Product (Product.make ?meta ?name fields)
+    let field ?meta ?inject ?set ?default name gist project p =
+      field' (Field.make ?meta ?inject ?set ?default ~name gist project) p
+
+    let dim ?meta ?inject ?default gist project p =
+      field' (Field.make ?meta ?inject ?default gist project) p
+
+    let product ?meta ?type_name ctor = Product.cons ?meta ?type_name ctor
+    let finish_product p = Product (Product.finish p)
 
     let p2 ?meta ?type_name g0 g1 =
-      let p2 v0 v1 = v0, v1 in
-      let d0 = dim g0 fst and d1 = dim g1 snd in
-      product ?meta ?type_name @@ ctor p2 * d0 * d1
+      product ?meta ?type_name (fun v0 v1 -> v0, v1)
+      |> dim g0 fst
+      |> dim g1 snd
+      |> finish_product
 
     let p3 ?meta ?type_name g0 g1 g2 =
-      let p3 v0 v1 v2 = v0, v1, v2 in
-      let d0 = dim g0 (fun (v, _, _) -> v) in
-      let d1 = dim g1 (fun (_, v, _) -> v) in
-      let d2 = dim g2 (fun (_, _, v) -> v) in
-      product ?meta ?type_name @@ ctor p3 * d0 * d1 * d2
+      product ?meta ?type_name (fun v0 v1 v2 -> v0, v1, v2)
+      |> dim g0 (fun (v, _, _) -> v)
+      |> dim g1 (fun (_, v, _) -> v)
+      |> dim g2 (fun (_, _, v) -> v)
+      |> finish_product
 
     let p4 ?meta ?type_name g0 g1 g2 g3 =
-      let p4 v0 v1 v2 v3 = v0, v1, v2, v3 in
-      let d0 = dim g0 (fun (v, _, _, _) -> v) in
-      let d1 = dim g1 (fun (_, v, _, _) -> v) in
-      let d2 = dim g2 (fun (_, _, v, _) -> v) in
-      let d3 = dim g3 (fun (_, _, _, v) -> v) in
-      product ?meta ?type_name @@ ctor p4 * d0 * d1 * d2 * d3
+      product ?meta ?type_name (fun v0 v1 v2 v3 -> v0, v1, v2, v3)
+      |> dim g0 (fun (v, _, _, _) -> v)
+      |> dim g1 (fun (_, v, _, _) -> v)
+      |> dim g2 (fun (_, _, v, _) -> v)
+      |> dim g3 (fun (_, _, _, v) -> v)
+      |> finish_product
 
     (* Records *)
 
-    let field ?(meta = Meta.empty) ?inject ?set ?default name gist project =
-      { meta; name; gist; project; inject; set; default }
-
-    let record ?meta name fields = Record (Product.make ?meta ~name fields)
+    let record ?meta type_name ctor = Product.cons ?meta ~type_name ctor
+    let finish_record r = Record (Product.finish r)
 
     (* Variants *)
 
     module Variant = struct
+      (* FIXME perhaps do the records simplification here.
+         i.e. mostly remove the [Case] module. *)
+
       type 'v case = 'v product
       module Case = struct
         type 'v t = 'v case
@@ -570,6 +583,9 @@ module Type = struct
           in
           loop 0 c.fields
       end
+
+      let case ?meta name ctor = Product.cons ?meta ~type_name:name ctor
+      let finish_case = Product.finish
 
       type 'v t = 'v variant
 
@@ -590,19 +606,23 @@ module Type = struct
       let of_option ?meta a =
         let some_ctor v = Some v in
         let some_proj = function Some v -> v | _ -> assert false in
-        let some_case = Case.make "Some" (ctor some_ctor * dim a some_proj) in
+        let some_case =
+          case "Some" some_ctor |> dim a some_proj |> finish_case
+        in
         let option_proj = function None -> none_case | Some _ -> some_case in
         make ?meta "option" option_proj [none_case; some_case]
 
       let of_either ?meta l r =
         let left_ctor v = Either.Left v in
         let left_proj = function Either.Left v -> v | _ -> assert false in
-        let left_dim = dim l left_proj in
-        let left_case = Case.make "Either.Left" (ctor left_ctor * left_dim) in
+        let left_case =
+          case "Either.Left" left_ctor |> dim l left_proj |> finish_case
+        in
         let right_ctor v = Either.Right v in
         let right_proj = function Either.Right v -> v | _ -> assert false in
-        let right_dim = dim r right_proj in
-        let right_case = Case.make "Either.Right"(ctor right_ctor * right_dim)in
+        let right_case =
+          case "Either.Right" right_ctor |> dim r right_proj |> finish_case
+        in
         let either_proj = function
         | Either.Left _ -> left_case | Right _ -> right_case
         in
@@ -611,10 +631,12 @@ module Type = struct
       let of_result ?meta a b =
         let ok_ctor v = Ok v in
         let ok_proj = function Ok v -> v | _ -> assert false in
-        let ok_case = Case.make "Ok" (ctor ok_ctor * dim a ok_proj) in
+        let ok_case = case "Ok" ok_ctor |> dim a ok_proj |> finish_case in
         let error_ctor e = Error e in
         let error_proj = function Error v -> v | _ -> assert false in
-        let error_case = Case.make "Error"(ctor error_ctor * dim b error_proj)in
+        let error_case =
+          case "Error" error_ctor |> dim b error_proj |> finish_case
+        in
         let result_proj = function Ok _ -> ok_case | Error _ -> error_case in
         make ?meta "result" result_proj [ok_case; error_case]
 
@@ -627,8 +649,9 @@ module Type = struct
           let cons_hdim = dim a cons_head in
           let self = Rec (lazy (Sum (Variant (Lazy.force g)))) in
           let cons_tdim = dim self cons_tail in
-          let cons_prod = ctor cons_ctor * cons_hdim * cons_tdim in
-          let cons_case = Case.make "::" cons_prod in
+          let cons_case =
+            case "::" cons_ctor |> cons_hdim |> cons_tdim |> finish_case
+          in
           let list_proj = function [] -> empty_case | _ -> cons_case in
           make ?meta "list" list_proj [empty_case; cons_case]
         end
@@ -636,7 +659,9 @@ module Type = struct
         Lazy.force g
     end
 
-    let case ?(meta = Meta.empty) name fields = { meta; name; fields }
+    let case = Variant.case
+    let case0 ?(meta = Meta.empty) name v = { meta; name; fields = Ctor v }
+    let finish_case = Variant.finish_case
     let variant ?(meta = Meta.empty) type_name project cases =
       Sum (Variant { meta; type_name; project; cases })
 

@@ -23,6 +23,11 @@ module Person = struct
   open Typegist
 
   let gist =
+    Type.Gist.record "Person.t" make
+    |> Type.Gist.field "name" Type.Gist.string_as_utf_8 name
+    |> Type.Gist.field "age" Type.Gist.(option int) age
+    |> Type.Gist.finish_record
+
     let name = Type.Gist.(field "name" string_as_utf_8) name in
     let age = Type.Gist.(field "age" (option int)) age in
     Type.Gist.(record "person" @@ ctor make * name * age)
@@ -48,9 +53,9 @@ module Status = struct
   open Typegist
 
   let gist =
-    let todo = Type.Gist.(case "Todo" @@ ctor Todo) in
-    let done' = Type.Gist.(case "Done" @@ ctor Done) in
-    let cancelled = Type.Gist.(case "Done" @@ ctor Cancelled) in
+    let todo = Type.Gist.case0 "Status.Todo" Todo in
+    let done' = Type.Gist.case0 "Status.Done" Done in
+    let cancelled = Type.Gist.case0 "Status.Cancelled" Done in
     let project = function
     | Todo -> todo | Done -> done' | Cancelled -> cancelled
     in

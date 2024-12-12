@@ -661,34 +661,20 @@ module Type : sig
           the fields. Once ['a] is equal to ['p] we have a
           {{!module-Product}product}. *)
 
+      val ctor : 'a -> ('p, 'a) fields
+      (** [ctor f] is [Ctor f]. This lifts the constructor function [f] for
+          the type ['p] in order to construct a list of fields with {!app}
+          yielding a result of type ['p]. *)
+
+      val app : ('p, 'f -> 'a) fields -> ('p, 'f) field -> ('p, 'a) fields
+      (** [app fs f] is [App (fs, f)] *)
+
       val is_empty : ('p, 'a) fields -> bool
       (** [is_empty fs] is [true] if [fs] has no fields. *)
 
       val is_singleton : ('p, 'a) fields -> bool
       (** [is_singleton fs] is [true] if [fs] has a single field. *)
     end
-
-    val ctor : 'a -> ('p, 'a) fields
-    (** [ctor f] is [Ctor f]. This lifts the constructor function [f] for the
-        type ['p] in order to construct a list of fields with {!app} yielding a
-        result of type ['p]. *)
-
-    val app : ('p, 'f -> 'a) fields -> ('p, 'f) field -> ('p, 'a) fields
-    (** [app f arg] is [App (f, app)] *)
-
-    val arg : ('p, 'f) field -> ('p, 'f -> 'a) fields -> ('p, 'a) fields
-    (** [app f arg] is [App (f, app)] *)
-
-    val ( * ) : ('p, 'f -> 'a) fields -> ('p, 'f) field -> ('p, 'a) fields
-    (** [fs * f] is [App (fs, f)]. Fancy operator so that you can
-        write, for example :
-        {[
-let pair_gist gfst gsnd =
-  let pair x y = (x, y) in
-  let fst = Type.Gist.(dim gfst fst) in
-  let snd = Type.Gist.(dim gsnd snd) in
-  Type.Gist.(product @@ ctor pair * fst * snd)
-        ]} *)
 
     (** Operating on products. *)
     module Product : sig
@@ -727,20 +713,42 @@ let pair_gist gfst gsnd =
 
       val with_meta : 'p Meta.t -> 'p product -> 'p product
       (** [with_meta meta p] is [p] with meta [meta]. *)
+
+      (** {1:constructing Constructing description}
+
+          This intermediate structure is used for constructing
+          product descriptions. *)
+
+      type ('p, 'ctor) cons
+      (** The type for constructing product decriptions. *)
+
     end
 
+    val field' :
+      ('p, 'f) field -> ('p, 'f -> 'a) Product.cons -> ('p, 'a) Product.cons
+    (** [field f p] adds [f] to the construction of [p]. *)
+
+    val field :
+      ?meta:('p, 'f) field Meta.t -> ?inject:('p -> 'f -> 'p) ->
+      ?set:('p -> 'f -> unit) -> ?default:'f -> string -> 'f t ->
+      ('p -> 'f) -> ('p, 'f -> 'a) Product.cons -> ('p, 'a) Product.cons
+    (** [field name g project p] defines a named field for a product ['v].
+        This is combines {!Field.make} and {!field'}. *)
+
     val dim :
-      ?meta:('p, 'a) field Meta.t -> ?name:string ->
-      ?inject:('p -> 'a -> 'p) -> ?default:'a -> 'a t -> ('p -> 'a) ->
-      ('p, 'a) field
-    (** [dim g project] defines a dimension of a product of type ['p].
-        This is just {!Field.make}. *)
+      ?meta:('p, 'd) field Meta.t -> ?inject:('p -> 'd -> 'p) ->
+      ?default:'d -> 'd t -> ('p -> 'd) ->
+      ('p, 'd -> 'a) Product.cons -> ('p, 'a) Product.cons
+    (** [dim] is like {!field} but is a nameless field. *)
 
     val product :
-      ?meta:'p Meta.t -> ?type_name:string -> ('p, 'p) fields -> 'p t
-    (** [product dims] is a product with dimensions and construction
-        represented by [dims]. This is {!Product.make} wrapped in a
-        {!constructor-Product} gist value. *)
+      ?meta:'p Meta.t -> ?type_name:string -> 'ctor -> ('p, 'ctor) Product.cons
+    (** [product ctor] is a product constructed with [ctor] to be satured
+        with {!Type.Gist.field} or {!Type.Gist.dim}. *)
+
+    val finish_product : ('p, 'p) Product.cons -> 'p t
+    (** [finish_product p] finishes the product to yield
+        a {!constructor-Product} gist value. *)
 
     val p2 :
       ?meta:('a * 'b) Meta.t -> ?type_name:string -> 'a t -> 'b t -> ('a * 'b) t
@@ -758,19 +766,19 @@ let pair_gist gfst gsnd =
 
    (** {2:record_ops Records}
 
-       Records are represented by named {{!product_ops}products} of
-       named fields. *)
+       A record is a {{!product_ops}product} of named fields named
+       after the record type name and tagged by
+       {!constructor-Record}. The following are convenience
+       combinators to build them. See
+       {{!page-cookbook.describing_records}an example}. *)
 
-    val field :
-      ?meta:('r, 'f) field Meta.t -> ?inject:('r -> 'f -> 'r) ->
-      ?set:('r -> 'f -> unit) -> ?default:'f -> string -> 'f t ->
-      ('r -> 'f) -> ('r, 'f) field
-    (** [field name g project ] defines a record field for a record ['r].
-        This is just {!Field.make}. *)
+    val record : ?meta:'r Meta.t -> string -> 'ctor -> ('r, 'ctor) Product.cons
+    (** [record name ctor] is a record constructed with [ctor] to be
+        satured with {!Type.Gist.field}. [name] is the record type name
+        as seen from the top level scope. *)
 
-    val record : ?meta:'r Meta.t -> string -> ('r, 'r) fields -> 'r t
-    (** [record name fields] is a record named [name] with fields
-        [field]. This is {!Product.make} wrapped in a {!constructor-Record}
+    val finish_record : ('r, 'r) Product.cons -> 'r t
+    (** [finish_record f] finishes the record to yield a {!constructor-Record}
         gist value. *)
 
 (** {2:variant_ops Variants}
@@ -873,17 +881,29 @@ let pair_gist gfst gsnd =
           as a variant. *)
     end
 
-    val case : ?meta:'v Meta.t -> string -> ('v, 'v) fields -> 'v Variant.case
-    (** [case name fields] is a variant case with product defined
-        by [fields]. This is {!Variant.Case.make}. *)
+    val case :
+      ?meta:'v Meta.t -> string -> 'ctor -> ('v, 'ctor) Product.cons
+    (** [case name ctor] is a variant case named [name] constructed
+        with [ctor] to be satured with {!Type.Gist.dim} or
+        {!Type.Gist.field} (for inline records). [name] is the
+        OCaml constructor name of the case as accessed from the
+        top level scope. E.g. ["Either.Left"]. *)
+
+    val finish_case : ('v, 'v) Product.cons -> 'v Variant.case
+    (** [finish_case f] finishes the case by giving the product
+        to {!Variant.Case.make}. *)
+
+    val case0 : ?meta:'v Meta.t -> string -> 'v -> 'v Variant.case
+    (** [case0 name v] is [case name v |> finish_case]. *)
 
     val variant :
       ?meta:'v Meta.t -> string -> ('v -> 'v Variant.case) ->
       'v Variant.case list -> 'v t
-    (** [variant type_name project cases] is a variant decontructed
-        by [project] and whose cases are enumerated in [cases].
-        This is {!Variant.make} wrapped in a {!constructor-Variant}
-        and {!constructor-Sum} gist value. *)
+    (** [variant type_name project cases] is a variant decontructed by
+        [project] and whose cases are enumerated in [cases].
+        [type_name] is the OCaml type name as accesed from the top
+        level scope. This is {!Variant.make} wrapped in a
+        {!constructor-Variant} and {!constructor-Sum} gist value. *)
 
    (** {2:sum_ops Sums}
 
