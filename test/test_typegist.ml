@@ -239,7 +239,7 @@ let test_gadt () =
 
 let test_key () =
   Test.test "meta keys" @@ fun () ->
-  let module Min = Type.Gist.Meta.Key (struct type 'a t = 'a end) in
+  let module Min = Type.Gist.Meta.Key (struct type ('a, 'b) t = 'a end) in
   let meta = Min.add 3 Type.Gist.Meta.empty in
   assert (Min.find meta = Some 3)
 

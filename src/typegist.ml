@@ -32,16 +32,19 @@ module Type = struct
     (* Metadata *)
 
     module Meta = struct
-      (* Abstracting type constructors with one parameter. So that
-         heterogeneous values in ['a Meta.t] can depend on ['a].
+      (* Abstracting type constructors with two parameter. So that
+         heterogeneous values in [('a, 'b) Meta.t] can depend on ['a]
+         a ['b]. Meta for gists have a single parameter meta for fields
+         have two: the result result type and the field type.
          See Yallop and White Lightweight Higher-Kinded Polymorphism
          https://doi.org/10.1007/978-3-319-07151-0_8 *)
       module Higher = struct
         (*  Snippet from https://github.com/yallop/higher
             MIT licensed Copyright (c) 2013 Leo White and Jeremy Yallop *)
         type ('a, 'f) app
-        module Newtype1 (T : sig type 'a t end) = struct
-          type 'a s = 'a T.t
+        module Newtype2 (T : sig type ('a, 'b) t end) =
+        struct
+          type ('a, 'b) s = ('a, 'b) T.t
           type t
           external inj : 'a -> 'b = "%identity"
           external prj : 'a -> 'b = "%identity"
@@ -50,32 +53,35 @@ module Type = struct
 
       module M = Map.Make (Int)
       type 't key = 't Id.t
-      type ('a, 't) value = ('a, 't) Higher.app
-      type 'a binding = B : 't key * ('a, 't) value -> 'a binding
-      type 'a t = 'a binding M.t
+      type ('a, 'b, 't) value = ('a, ('b, 't) Higher.app) Higher.app
+      type ('a, 'b) binding =
+          B : 't key * ('a, 'b, 't) value -> ('a, 'b) binding
+
+      type ('a, 'b) t2 = ('a, 'b) binding M.t
+      type 'a t = ('a, 'a) binding M.t
       let empty = M.empty
       let is_empty = M.is_empty
 
-      module type VALUE = sig type 'a t end
+      module type VALUE = sig type ('a, 'b) t end
       module type KEY = sig
-        type 'a meta := 'a t
-        type 'a value
-        val mem : 'a meta -> bool
-        val add : 'a value -> 'a meta -> 'a meta
-        val find : 'a meta -> 'a value option
-        val remove : 'a meta -> 'a meta
+        type ('a, 'b) meta := ('a, 'b) t2
+        type ('a, 'b) value
+        val mem : ('a, 'b) meta -> bool
+        val add : ('a, 'b) value -> ('a, 'b) meta -> ('a, 'b) meta
+        val find : ('a, 'b) meta -> ('a, 'b) value option
+        val remove : ('a, 'b) meta -> ('a, 'b) meta
       end
       module Key (V : VALUE) = struct
-        type 'a meta = 'a t
-        module H = Higher.Newtype1 (V)
-        type 'a value = 'a H.s
+        type ('a, 'b) meta = ('a, 'b) t2
+        module H = Higher.Newtype2 (V)
+        type ('a, 'b) value = ('a, 'b) H.s
         type t = H.t
         let key = Id.make ()
         let mem m = M.mem (Id.uid key) m
         let add v m = M.add (Id.uid key) (B (key, H.inj v)) m
         let remove m = M.remove (Id.uid key) m
         let find m =
-          let find : type v a. v key -> a meta -> a value option =
+          let find : type v a b. v key -> (a, b) meta -> (a, b) value option =
           fun key m -> match M.find_opt (Id.uid key) m with
           | None -> None
           | Some B (k', v) ->
@@ -84,8 +90,9 @@ module Type = struct
           in
           find key m
       end
-      module Doc = Key (struct type 'a t = string end)
-      module Ignore = Key (struct type 'a t = bool end)
+
+      module Doc = Key (struct type ('a, 'b) t = string end)
+      module Ignore = Key (struct type ('a, 'b) t = bool end)
       let make ~doc = Doc.add doc M.empty
     end
 
@@ -163,7 +170,7 @@ module Type = struct
         ('k, 'v, 'm) maplike
 
     and ('p, 'f) field =
-      { meta : ('p, 'f) field Meta.t;
+      { meta : ('p, 'f) Meta.t2;
         name : string;
         gist : 'f t;
         project : ('p -> 'f);
@@ -266,9 +273,9 @@ module Type = struct
       | Int32 _ -> Int32.compare | Int64 _ -> Int64.compare
       | Nativeint _ -> Nativeint.compare | Float _ -> Float.compare
 
-      let char_to_string c = (* TODO should we rather interpret as latin1 ? *)
-        if Char.code c <= 0x7F then String.make 1 c else
-        Printf.sprintf "\\x%02x" (Char.code c)
+      let char_to_string = function
+      | ' ' .. '~' as c (* is_print *) -> String.make 1 c
+      | c -> Printf.sprintf "\\x%02x" (Char.code c)
 
       let uchar_to_string u =
         let b = Bytes.create (Uchar.utf_8_byte_length u) in
@@ -501,39 +508,16 @@ module Type = struct
       let app f args = App (f, args)
       let is_empty = function Ctor _ -> true | _ -> false
       let is_singleton = function App (Ctor _, _) -> true | _ -> false
-    end
-
-    (* Products *)
-
-    module Product = struct
-      type 'p t = 'p product
-      let make ?(meta = Meta.empty) ?(name = "") fields =
-        { meta; name; fields }
-      let meta (p : 'p t) = p.meta
-      let name (p : 'p t) = p.name
-      let fields (p : 'p t) = p.fields
-      let is_empty (p : 'v t) = Fields.is_empty p.fields
-      let is_singleton (p : 'v t) = Fields.is_singleton p.fields
-      let with_meta meta (p : 'v t) = { p with meta }
-      let rec_field_count (c : 'v t) =
-          let rec loop : type p a. int -> (p, a) fields -> int =
-            fun acc fs -> match fs with
-            | Ctor _ -> acc
-            | App (c, f) -> loop (acc + match f.gist with Rec _ -> 1 | _ -> 0) c
-          in
-          loop 0 c.fields
 
       type ('p, 'ctor) cons =
         { meta : 'p Meta.t; type_name : string; fields : ('p, 'ctor) fields }
 
       let cons ?(meta = Meta.empty) ?(type_name = "") ctor =
         { meta; type_name; fields = Ctor ctor }
-
-      let finish cons = make ~meta:cons.meta ~name:cons.type_name cons.fields
     end
 
-    let field' f (p : ('p, 'ctor) Product.cons) =
-      { p with Product.fields = App (p.fields, f) }
+    let field' f (p : ('p, 'ctor) Fields.cons) =
+      { p with Fields.fields = App (p.fields, f) }
 
     let field ?meta ?inject ?set ?default name gist project p =
       field' (Field.make ?meta ?inject ?set ?default ~name gist project) p
@@ -541,8 +525,33 @@ module Type = struct
     let dim ?meta ?inject ?default gist project p =
       field' (Field.make ?meta ?inject ?default gist project) p
 
-    let product ?meta ?type_name ctor = Product.cons ?meta ?type_name ctor
-    let finish_product p = Product (Product.finish p)
+    (* Products *)
+
+    module Product = struct
+      type 'p t = 'p product
+      let make ?(meta = Meta.empty) ?(name = "") fields = { meta; name; fields }
+      let meta (p : 'p t) = p.meta
+      let name (p : 'p t) = p.name
+      let fields (p : 'p t) = p.fields
+      let is_empty (p : 'v t) = Fields.is_empty p.fields
+      let is_singleton (p : 'v t) = Fields.is_singleton p.fields
+      let with_meta meta (p : 'v t) = { p with meta }
+      let rec_field_count (c : 'v t) =
+        let rec loop : type p a. int -> (p, a) fields -> int =
+          fun acc fs -> match fs with
+          | Ctor _ -> acc
+          | App (c, f) ->
+              (* FIXME lazy *)
+              loop (acc + match f.gist with Rec _ -> 1 | _ -> 0) c
+        in
+        loop 0 c.fields
+
+      let of_fields_cons cons =
+        make ~meta:cons.Fields.meta ~name:cons.type_name cons.fields
+    end
+
+    let product ?meta ?type_name ctor = Fields.cons ?meta ?type_name ctor
+    let finish_product p = Product (Product.of_fields_cons p)
 
     let p2 ?meta ?type_name g0 g1 =
       product ?meta ?type_name (fun v0 v1 -> v0, v1)
@@ -567,15 +576,15 @@ module Type = struct
 
     (* Records *)
 
-    let record ?meta type_name ctor = Product.cons ?meta ~type_name ctor
-    let finish_record r = Record (Product.finish r)
+    let record ?meta type_name ctor = Fields.cons ?meta ~type_name ctor
+    let finish_record r = Record (Product.of_fields_cons r)
 
     (* Variants *)
 
     module Variant = struct
       type 'v case = 'v product
-      let case ?meta name ctor = Product.cons ?meta ~type_name:name ctor
-      let finish_case = Product.finish
+      let case ?meta name ctor = Fields.cons ?meta ~type_name:name ctor
+      let finish_case = Product.of_fields_cons
 
       type 'v t = 'v variant
 
@@ -872,42 +881,39 @@ module Fun = struct
   module Generic = struct
     module Meta = struct
       module Fmt = struct
-        module V = struct type 'a t = Format.formatter -> 'a -> unit end
-        include V
-        let ignore _ _ = ()
+        module V = struct type ('a, 'b) t = Format.formatter -> 'a -> unit end
         include (Type.Gist.Meta.Key (V) : Type.Gist.Meta.KEY (* no mli ! *)
-                 with type 'a value = 'a t)
+                 with type ('a, 'b) value = ('a, 'b) V.t)
+        let ignore ppf _ = ()
       end
       module Equal = struct
-        module V = struct type 'a t = 'a -> 'a -> bool end
-        include V
-        let ignore _ _ = true
+        module V = struct type ('a, 'b) t = 'a -> 'a -> bool end
         include (Type.Gist.Meta.Key (V) : Type.Gist.Meta.KEY (* no mli ! *)
-                 with type 'a value = 'a t)
+                 with type ('a, 'b) value = ('a, 'b) V.t)
+        let ignore _ _ = true
       end
       module Compare = struct
-        module V = struct type 'a t = 'a -> 'a -> int end
-        include V
-        let ignore _ _ = 0
+        module V = struct type ('a, 'b) t = 'a -> 'a -> int end
         include (Type.Gist.Meta.Key (V) : Type.Gist.Meta.KEY (* no mli ! *)
-                 with type 'a value = 'a t)
+                 with type ('a, 'b) value = ('a, 'b) V.t)
+       let ignore _ _ = 0
       end
 
       module Random = struct
         module Gen = struct
           module V = struct
-            type 'a t = size:int -> Random.State.t -> bound:int -> 'a
+            type ('a, 'b) t = size:int -> Random.State.t -> bound:int -> 'a
           end
           include V
           let const v = fun ~size:_ _ ~bound:_ -> v
           include (Type.Gist.Meta.Key (V) : Type.Gist.Meta.KEY (* no mli ! *)
-                   with type 'a value = 'a t)
+                   with type ('a, 'b) value = ('a, 'b) t)
         end
         module Size = struct
-          module V = struct type 'a t = int end
+          module V = struct type ('a, 'b) t = int end
           include V
           include (Type.Gist.Meta.Key (V) : Type.Gist.Meta.KEY (* no mli ! *)
-                   with type 'a value = 'a t)
+                   with type ('a, 'b) value = ('a, 'b) t)
         end
       end
     end

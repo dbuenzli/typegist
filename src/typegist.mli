@@ -10,13 +10,7 @@
     {!modules: Type.Gist Fun.Generic}
 
     to the {!Stdlib.Type} and {!Stdlib.Func} modules. Before OCaml 5.1
-    this also defines the {!Type} module.
-
-        The [typegist] library:
-
-    Open the module to use it, this only redefines the [Type] and [Fun] modules
-    in your scope.
-*)
+    this also defines the {!Type} module. *)
 
 (** Type introspection. *)
 module Type : sig
@@ -192,8 +186,8 @@ module Type : sig
         a functor instantiated with the data type of the value. For example:
         {[
           type 'a fmt = Format.formatter -> 'a -> unit
-          module Meta_fmt = Type.Gist.Meta.Key (struct type 'a t = 'f fmt end)
-          module Meta_skip = Type.Gist.Meta.Key (struct type 'a t = bool end)
+          module Meta_fmt = Type.Gist.Meta.Key (struct type ('a, 'b) t = 'a fmt end)
+          module Meta_skip = Type.Gist.Meta.Key (struct type ('a, 'b) t = bool end)
         ]}
         you can then use the module's {{!Meta.KEY}key interface} to test
         key membership, add and remove data for the key. For example:
@@ -205,59 +199,63 @@ module Type : sig
             Type.Gist.Meta.empty |> Meta_fmt.add Format.pp_print_string
         ]}*)
     module Meta : sig
-      type 'a t
-      (** The type for metadata for types of type ['a]. Key values
+
+      type ('a, 'b) t2
+      (** The type for metadata for types parameterized by ['a] and ['b].
+          Key values can depend on ['a] and ['b]. *)
+
+      type 'a t = ('a, 'a) t2
+      (** The type for metadata for types parameterized by ['a]. Key values
           can depend on ['a]. *)
 
-      val make : doc:string -> 'a t
+      val make : doc:string -> ('a, 'b) t2
       (** [make ~doc] is [Doc.add doc empty]. *)
 
-      val empty : 'a t
+      val empty : ('a, 'b) t2
       (** [empty] is the empty metadata. *)
 
-      val is_empty : 'a t -> bool
-      (** [is_empty m] is [iff] [m] has no bindings. *)
+      val is_empty : ('a, 'b) t2 -> bool
+      (** [is_empty m] is [true] iff [m] has no bindings. *)
 
-     (** Type signature to describe the type dependent value
-         of a type. *)
+      (** Type signature to describe the two type dependent value
+          of a type. *)
       module type VALUE = sig
-        type 'a t
-        (** The type for the key value that depends on ['a]. *)
+        type ('a, 'b) t
+        (** The type for the key value that depends on ['a] and ['b]. *)
       end
 
       (** The type for key modules.
 
           A key module is a module that handles a specific key. *)
       module type KEY = sig
-        type 'a meta := 'a t
 
-        type 'a value
+        type ('a, 'b) value
         (** The type for the key's value. *)
 
-        val mem : 'a meta -> bool
+        val mem : ('a, 'b) t2 -> bool
         (** [mem m] is [true] iff [m] has a binding for the key. *)
 
-        val add : 'a value -> 'a meta -> 'a meta
+        val add : ('a, 'b) value -> ('a, 'b) t2 -> ('a, 'b) t2
         (** [add v m] is [m] with the key bound to [v] *)
 
-        val find : 'a meta -> 'a value option
+        val find : ('a, 'b) t2 -> ('a, 'b) value option
         (** [find m] is the binding for the key (if any). *)
 
-        val remove : 'a meta -> 'a meta
+        val remove : ('a, 'b) t2 -> ('a, 'b) t2
         (** [remove m] is [m] with the binding for the key removed (if
             bound). *)
       end
 
       (** [Key (V)] is a new key with values of type ['a V.t]. *)
-      module Key (V : VALUE) : KEY with type 'a value = 'a V.t
+      module Key (V : VALUE) : KEY with type ('a, 'b) value := ('a, 'b) V.t
 
       (** {1:std_keys Standard keys} *)
 
       (** [Doc] is a key for a doc string. *)
-      module Doc : KEY with type 'a value = string
+      module Doc : KEY with type ('a, 'b) value := string
 
       (** [Ignore] is a key for specifying to ignore the description. *)
-      module Ignore : KEY with type 'a value = bool
+      module Ignore : KEY with type ('a, 'b) value := bool
     end
 
     type type_name = string
@@ -281,7 +279,9 @@ module Type : sig
     (** The type for representing scalar types of type ['a].
         See {{!scalar_ops}scalars}. *)
 
-    type bytes_encoding = [ `Bytes | `Utf_8 ]
+    type bytes_encoding =
+    [ `Bytes (** Arbitrary byte sequence *)
+    | `Utf_8 (** Valid UTF-8 byte sequence *) ]
     (** The type for specifying the two standard interpretations of
         OCaml [bytes] and [string] values. *)
 
@@ -571,14 +571,10 @@ module Type : sig
         of the given representations. See {{!Maplike.map_modules}here}
         create map modules from standard library maps. *)
 
-    (** {2:product_ops Products}
+    (** {2:fields_ops Fields}
 
-        Products (tuples), records and variant cases are all products
-        of types. The toplevel type representation distinguishes them in
-        different cases but otherwise they share the same representation: a
-        product of typed and possibly named fields.
-
-        The {!type-field} type represents an individual field of a product. The
+        The {!type-field} type represents an individual field of a
+        {{!product_ops}product}. The
         {!type-fields} type represent the ordered sequence of fields and the
         way to construct the product from its fields with a constructor
         function. *)
@@ -613,7 +609,7 @@ module Type : sig
           type ['p]. *)
 
       val make :
-        ?meta:('p, 'f) field Meta.t -> ?name:string ->
+        ?meta:('p, 'f) Meta.t2 -> ?name:string ->
         ?inject:('p -> 'f -> 'p) -> ?set:('p -> 'f -> unit) ->
         ?default:'f -> 'f gist ->
         ('p -> 'f) -> ('p, 'f) field
@@ -633,7 +629,7 @@ module Type : sig
           {- [default] is a default value for the dimension
              (defaults to [None]).}} *)
 
-      val meta : ('p, 'f) field -> ('p, 'f) field Meta.t
+      val meta : ('p, 'f) field -> ('p, 'f) Meta.t2
       (** [meta f] is the meta of [f]. *)
 
       val name : ('p, 'f) field ->  string
@@ -680,7 +676,40 @@ module Type : sig
 
       val is_singleton : ('p, 'a) fields -> bool
       (** [is_singleton fs] is [true] if [fs] has a single field. *)
+
+      (** {1:constructing Constructing fields descriptions}
+
+          This intermediate structure is used for constructing
+          product descriptions. *)
+
+      type ('p, 'ctor) cons
+      (** The type for constructing fields. *)
     end
+
+    val field' :
+      ('p, 'f) field -> ('p, 'f -> 'a) Fields.cons -> ('p, 'a) Fields.cons
+    (** [field f p] adds [f] to the construction of [p]. *)
+
+    val field :
+      ?meta:('p, 'f) Meta.t2 -> ?inject:('p -> 'f -> 'p) ->
+      ?set:('p -> 'f -> unit) -> ?default:'f -> string -> 'f t ->
+      ('p -> 'f) -> ('p, 'f -> 'a) Fields.cons -> ('p, 'a) Fields.cons
+    (** [field name g project p] defines a named field for a product ['v].
+        This is combines {!Field.make} and {!field'}. *)
+
+    val dim :
+      ?meta:('p, 'd) Meta.t2 -> ?inject:('p -> 'd -> 'p) ->
+      ?default:'d -> 'd t -> ('p -> 'd) ->
+      ('p, 'd -> 'a) Fields.cons -> ('p, 'a) Fields.cons
+    (** [dim] is like {!field} but is a nameless field. *)
+
+    (** {1:product_ops Products}
+
+        Products (tuples), records and variant cases are all products
+        of types. The toplevel type representation distinguishes them
+        in different cases but otherwise they share the same
+        representation: a product of typed and possibly named
+        fields. *)
 
     (** Operating on products. *)
     module Product : sig
@@ -725,40 +754,15 @@ module Type : sig
       val with_meta : 'p Meta.t -> 'p product -> 'p product
       (** [with_meta meta p] is [p] with meta [meta]. *)
 
-      (** {1:constructing Constructing description}
-
-          This intermediate structure is used for constructing
-          product descriptions. *)
-
-      type ('p, 'ctor) cons
-      (** The type for constructing product decriptions. *)
-
     end
-
-    val field' :
-      ('p, 'f) field -> ('p, 'f -> 'a) Product.cons -> ('p, 'a) Product.cons
-    (** [field f p] adds [f] to the construction of [p]. *)
-
-    val field :
-      ?meta:('p, 'f) field Meta.t -> ?inject:('p -> 'f -> 'p) ->
-      ?set:('p -> 'f -> unit) -> ?default:'f -> string -> 'f t ->
-      ('p -> 'f) -> ('p, 'f -> 'a) Product.cons -> ('p, 'a) Product.cons
-    (** [field name g project p] defines a named field for a product ['v].
-        This is combines {!Field.make} and {!field'}. *)
-
-    val dim :
-      ?meta:('p, 'd) field Meta.t -> ?inject:('p -> 'd -> 'p) ->
-      ?default:'d -> 'd t -> ('p -> 'd) ->
-      ('p, 'd -> 'a) Product.cons -> ('p, 'a) Product.cons
-    (** [dim] is like {!field} but is a nameless field. *)
 
     val product :
       ?meta:'p Meta.t -> ?type_name:type_name -> 'ctor ->
-      ('p, 'ctor) Product.cons
+      ('p, 'ctor) Fields.cons
     (** [product ctor] is a product constructed with [ctor] to be satured
         with {!Type.Gist.field} or {!Type.Gist.dim}. *)
 
-    val finish_product : ('p, 'p) Product.cons -> 'p t
+    val finish_product : ('p, 'p) Fields.cons -> 'p t
     (** [finish_product p] finishes the product to yield
         a {!constructor-Product} gist value. *)
 
@@ -786,12 +790,12 @@ module Type : sig
        {{!page-cookbook.describing_records}an example}. *)
 
     val record :
-      ?meta:'r Meta.t -> type_name -> 'ctor -> ('r, 'ctor) Product.cons
+      ?meta:'r Meta.t -> type_name -> 'ctor -> ('r, 'ctor) Fields.cons
     (** [record type_name ctor] is a record constructed with [ctor] to be
         satured with {!Type.Gist.field}. [type_name] is the record
         {{!type_name}type name}. *)
 
-    val finish_record : ('r, 'r) Product.cons -> 'r t
+    val finish_record : ('r, 'r) Fields.cons -> 'r t
     (** [finish_record f] finishes the record to yield a {!constructor-Record}
         gist value. *)
 
@@ -864,14 +868,14 @@ module Type : sig
     end
 
     val case :
-      ?meta:'v Meta.t -> case_name -> 'ctor -> ('v, 'ctor) Product.cons
+      ?meta:'v Meta.t -> case_name -> 'ctor -> ('v, 'ctor) Fields.cons
     (** [case case_name ctor] is a variant case named [case_name] constructed
         with [ctor] to be satured with {!Type.Gist.dim} or
         {!Type.Gist.field} (for inline records). [name] is the
         OCaml constructor name of the case as accessed from the
         top level scope. E.g. ["Either.Left"]. *)
 
-    val finish_case : ('v, 'v) Product.cons -> 'v Variant.case
+    val finish_case : ('v, 'v) Fields.cons -> 'v Variant.case
     (** [finish_case f] finishes the case by giving the product
         to {!Variant.Case.make}. *)
 
@@ -1104,13 +1108,11 @@ module Fun : sig
           that you would not like to print a substructure by formatting
           nothing, the {!Fmt.ignore} function does that. *)
       module Fmt : sig
-        type 'a t = Format.formatter -> 'a -> unit
-        (** The type for custom value formatter of type ['a]. *)
+        include Type.Gist.Meta.KEY with
+          type ('a, 'b) value := Format.formatter -> 'a -> unit (** @inline *)
 
-        val ignore : 'a t
-        (** [ignore] formats nothing. *)
-
-        include Type.Gist.Meta.KEY with type 'a value := 'a t (** @inline *)
+        val ignore : Format.formatter -> 'a -> unit
+        (** [ignore] is a formatter that can be used to print nothing. *)
       end
 
       (** Custom equality key.
@@ -1124,13 +1126,12 @@ module Fun : sig
           a subtructure by always returning [true], the
           {!Equal.ignore} function does that. *)
       module Equal : sig
-        type 'a t = 'a -> 'a -> bool
         (** The type for custom value equality of type ['a]. *)
+        include Type.Gist.Meta.KEY
+          with type ('a, 'b) value := 'a -> 'a -> bool (** @inline *)
 
         val ignore : 'a -> 'a -> bool
         (** [ignore v0 v1] is [true]. *)
-
-        include Type.Gist.Meta.KEY with type 'a value := 'a t (** @inline *)
       end
 
       (** Custom comparison key.
@@ -1144,13 +1145,11 @@ module Fun : sig
           compare a substructure by always returning [0] (equal), the
           {!Compare.ignore} function does that. *)
       module Compare : sig
-        type 'a t = 'a -> 'a -> int
-        (** The type for custom value equality of type ['a]. *)
+        include Type.Gist.Meta.KEY
+          with type ('a, 'b) value := 'a -> 'a -> int (** @inline *)
 
         val ignore : 'a -> 'a -> int
         (** [ignore v0 v1] is [0]. *)
-
-        include Type.Gist.Meta.KEY with type 'a value := 'a t (** @inline *)
       end
 
       (** Custom random generator and random sizing.
@@ -1170,16 +1169,17 @@ module Fun : sig
           does that. *)
         module Gen : sig
 
-          type 'a t = size:int -> Random.State.t -> bound:int -> 'a
+          type ('a, _) t = size:int -> Random.State.t -> bound:int -> 'a
           (** The type for custom random generators. [bound] is a
               bounding factor that depends on [size] for recursive data
               structures when the bound reaches [0] you should no
               longer recurse. *)
 
-          val const : 'a -> 'a t
+          val const : 'a -> ('a, _) t
           (** [const v] ignores the random generator and returns [v]. *)
 
-          include Type.Gist.Meta.KEY with type 'a value := 'a t (** @inline *)
+          include Type.Gist.Meta.KEY with
+            type ('a, 'b) value := ('a, 'b) t (** @inline *)
         end
 
         (** Sizing factor alteration.
@@ -1188,8 +1188,9 @@ module Fun : sig
             the metadata of a gist [g] to determine the sizing factor
             for generating a value described by the gist. *)
         module Size : sig
-          type 'a t = int
-          include Type.Gist.Meta.KEY with type 'a value := 'a t (** @inline *)
+          type ('a, _) t = int
+          include Type.Gist.Meta.KEY with
+            type ('a, 'b) value := ('a, 'b) t (** @inline *)
         end
       end
     end
