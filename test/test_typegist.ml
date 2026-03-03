@@ -6,7 +6,7 @@
 open B0_testing
 open Typegist
 
-let test_pair () =
+let test_pair =
   Test.test "pairs" @@ fun () ->
   let pair_gist gfst gsnd =
     Type.Gist.product (fun x y -> (x, y))
@@ -15,18 +15,19 @@ let test_pair () =
     |> Type.Gist.finish_product
   in
   let pair = pair_gist Type.Gist.int Type.Gist.string_as_utf_8 in
-  Test.log " type: @[%a@]" Type.Gist.pp_type pair;
-  Test.log "value: @[%a@]" (Fun.Generic.pp pair) (3, "hey")
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type pair;
+  Test.Log.msg "value: @[%a@]" (Fun.Generic.pp pair) (3, "hey")
 
-let test_func () =
+let test_func =
   Test.test "function representation" @@ fun () ->
   let func = Type.Gist.(string_as_utf_8 @-> int) in
   let ret_pair = Type.Gist.(int @-> int @-> p2 int int) in
   let pair x y = x, y in
-  Test.log "   value String.length: @[%a@]" (Fun.Generic.pp func) String.length;
-  Test.log "value pair constructor: @[%a@]" (Fun.Generic.pp ret_pair) pair
+  Test.Log.msg "   value String.length: @[%a@]"
+    (Fun.Generic.pp func) String.length;
+  Test.Log.msg "value pair constructor: @[%a@]" (Fun.Generic.pp ret_pair) pair
 
-let test_btree () =
+let test_btree =
   Test.test "binary tree" @@ fun () ->
   let module Btree : sig
     type 'a t = Empty | Node of 'a t * 'a * 'a t
@@ -57,10 +58,10 @@ let test_btree () =
   in
   let int_tree = Btree.type_gist Type.Gist.int in
   let t = Btree.Node (Node (Empty, 2, Empty), 1, Empty) in
-  Test.log " type: @[%a@]" Type.Gist.pp_type int_tree;
-  Test.log "value: @[%a@]" (Btree.pp Type.Gist.int) t
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type int_tree;
+  Test.Log.msg "value: @[%a@]" (Btree.pp Type.Gist.int) t
 
-let test_abstract_person () =
+let test_abstract_person =
   Test.test "Person" @@ fun () ->
   let module Person : sig
     type t
@@ -116,17 +117,17 @@ let test_abstract_person () =
   let p =
     Person.make "Bactrian" "bactrian@example.com" (Some "+XX XXX XX XX")
   in
-  Test.log " type: @[%a@]" Type.Gist.pp_type Person.type_gist;
-  Test.log "value: @[%a@]" Person.pp p
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type Person.type_gist;
+  Test.Log.msg "value: @[%a@]" Person.pp p
 
-let test_maplike () =
+let test_maplike =
   Test.test "maplike" @@ fun () ->
   let module String_map = Map.Make (String) in
   let imap = String_map.(empty |> add "fst" 1 |> add "snd" 2) in
   let module M = Type.Gist.Maplike.Map_module_of_map (Int) (String_map) in
   let g = Type.Gist.(map_module (module M) string_as_utf_8 int) in
-  Test.log " type: @[%a@]" Type.Gist.pp_type g;
-  Test.log "value: @[%a@]" (Fun.Generic.pp g) imap
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type g;
+  Test.Log.msg "value: @[%a@]" (Fun.Generic.pp g) imap
 
 let test_rec_meta () =
   let module M = struct
@@ -149,7 +150,7 @@ let test_rec_meta () =
   in
   ()
 
-let test_rec () =
+let test_rec =
   Test.test "mutually recursive" @@ fun () ->
   let module M = struct
     type one = One | To_two of two
@@ -183,11 +184,11 @@ let test_rec () =
   end
   in
   let v = M.To_two (M.To_one (M.To_two Two)) in
-  Test.log "type one: @[%a@]" Type.Gist.pp_type M.type_gist_one;
-  Test.log "type two: @[%a@]" Type.Gist.pp_type M.type_gist_two;
-  Test.log "   value: @[%a@]" (Fun.Generic.pp M.type_gist_one) v
+  Test.Log.msg "type one: @[%a@]" Type.Gist.pp_type M.type_gist_one;
+  Test.Log.msg "type two: @[%a@]" Type.Gist.pp_type M.type_gist_two;
+  Test.Log.msg "   value: @[%a@]" (Fun.Generic.pp M.type_gist_one) v
 
-let test_custom_fmt () =
+let test_custom_fmt =
   Test.test "custom formatter" @@ fun () ->
   let us = [|Uchar.of_int 0x1F42B; Uchar.of_int 0x41|] in
   let uchar_debug ppf u = Format.fprintf ppf "U+%04X" (Uchar.to_int u) in
@@ -197,10 +198,10 @@ let test_custom_fmt () =
   in
   let uchars = Type.Gist.(array uchar) in
   let uchars_debug = Type.Gist.(array uchar_debug) in
-  Test.log "normal: @[%a@]" (Fun.Generic.pp uchars) us;
-  Test.log "custom: @[%a@]" (Fun.Generic.pp uchars_debug) us
+  Test.Log.msg "normal: @[%a@]" (Fun.Generic.pp uchars) us;
+  Test.Log.msg "custom: @[%a@]" (Fun.Generic.pp uchars_debug) us
 
-let test_gadt () =
+let test_gadt =
   Test.test "existential GADT" @@ fun () ->
   let module M = struct
     type 'a t =
@@ -232,28 +233,16 @@ let test_gadt () =
   end
   in
   let v = M.V (Pair (Pair (Int, Float), Float)) in
-  Test.log " type: @[%a@]" Type.Gist.pp_type M.type_gist;
-  Test.log " type: @[%a@]" Type.Gist.pp_type M.type_gist;
-  Test.log "value: @[%a@]" (Fun.Generic.pp M.type_gist) v;
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type M.type_gist;
+  Test.Log.msg " type: @[%a@]" Type.Gist.pp_type M.type_gist;
+  Test.Log.msg "value: @[%a@]" (Fun.Generic.pp M.type_gist) v;
   ()
 
-let test_key () =
+let test_key =
   Test.test "meta keys" @@ fun () ->
   let module Min = Type.Gist.Meta.Key (struct type ('a, 'b) t = 'a end) in
   let meta = Min.add 3 Type.Gist.Meta.empty in
   assert (Min.find meta = Some 3)
 
-let main () =
-  Test.main @@ fun () ->
-  test_pair ();
-  test_func ();
-  test_btree ();
-  test_abstract_person ();
-  test_maplike ();
-  test_rec ();
-  test_custom_fmt ();
-  test_gadt ();
-  test_key ();
-  ()
-
+let main () = Test.main @@ fun () -> Test.autorun ()
 let () = if !Sys.interactive then () else exit (main ())
