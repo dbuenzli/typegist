@@ -34,7 +34,8 @@ let default =
     |> ~~ B0_opam.depends
       [ "ocaml", {|>= "4.14.0"|};
         "ocamlfind", {|build|};
-        "ocamlbuild", {|build|}; ]
+        "ocamlbuild", {|build|};
+        "topkg", {|build & >= "1.1.0"|}; ]
     |> B0_meta.tag B0_opam.tag
   in
   B0_pack.make "default" ~doc:"The typegist package" ~meta ~locked:true @@
