@@ -5,6 +5,7 @@ open Result.Syntax
 
 let typegist = B0_ocaml.libname "typegist"
 let b0_std = B0_ocaml.libname "b0.std"
+let jsont = B0_ocaml.libname "jsont"
 
 (* Libraries *)
 
@@ -15,6 +16,7 @@ let typegist_lib = B0_ocaml.lib typegist ~srcs: [`Dir ~/"src"]
 let test ?(requires = []) = B0_ocaml.test ~requires:(typegist :: requires)
 let test_typegist = test ~/"test/test_typegist.ml" ~requires:[b0_std]
 let cookbook = test ~/"test/cookbook.ml" ~run:false
+let quick_start = test ~/"test/quick_start.ml" ~run:false
 
 (* Packs *)
 
@@ -32,7 +34,7 @@ let default =
     |> ~~ B0_opam.build
       {|[["ocaml" "pkg/pkg.ml" "build" "--dev-pkg" "%{dev}%"]]|}
     |> ~~ B0_opam.depends
-      [ "ocaml", {|>= "4.14.0"|};
+      [ "ocaml", {|>= "5.5.0"|};
         "ocamlfind", {|build|};
         "ocamlbuild", {|build|};
         "topkg", {|build & >= "1.1.0"|}; ]

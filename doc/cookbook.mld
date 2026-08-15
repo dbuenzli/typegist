@@ -2,16 +2,150 @@
 
 A few conventions and recipes to describe your types with {!Typegist.Type.Gist}.
 
+{b Note.} Code snippets here assume they are done after:
+{[
+open Typegist
+]}
+And often assume they are made in a compilation unit named [M].
+
 {1:conventions Conventions}
 
-Given an OCaml type [t] is type gist should be called [t_typegist]. If your
-type follows the [M.t] convention use [M.typegist].
+{2:conventions_naming Naming gists}
 
-{1:describing_records Describing records}
+Given an OCaml type [t], its type gist should be called [t_gist]. If
+your type follows the [M.t] convention use [M.gist].
 
-An OCaml record is {{!Typegist.Type.Gist.record_ops}described} by
-naming a product of {{!Typegist.Type.Gist.field}named fields} with
-{!Typegist.Type.Gist.val-record}.
+{2:convention_generic_fun_metadata Generic function metadata}
+
+For a generic function with the signature :
+{[
+type 'a op = …
+]}
+A metadata key that allows to override the generic function on gists
+and fields should be provided as:
+{[
+module Op : sig
+  type 'a t = 'a op
+  include Typegist.Meta.KEY with type ('a, 'b) value := 'b op (** @inline *)
+end = struct
+  type 'a t = 'a op
+  module V = struct type ('a, 'b) value = 'b op end
+  include Type.Gist.Meta.Key (V)
+end
+]}
+
+The {{!generic_funs_template}generic function template} shows how to use the
+metadata in the generic function implementation and this
+{{!page-cookbook.generic_funs_override}cookbook entry} shows
+how to use these in the definition of gists.
+
+{1:tips Tips}
+
+{2:tips_def Define type gists at the top-level}
+
+Unless you are dealing with a {{!blueprints_polymorphic_types}polymorphic
+type}, make sure to define your type gists at the top-level of your
+modules to avoid constructing them on each function call. Do this:
+
+{[
+let gist = …
+let pp = Fun.Generic.pp gist
+]}
+
+Not:
+
+{[
+let pp ppf v = (* Don't do this *)
+  let gist = … in
+  Fun.Generic.pp gist ppf v
+]}
+
+{2:tips_metadata_update Updating the metadata of an existing gist}
+
+The metadata of a type gist [g] can be updated with
+{!Typegist.Type.Gist.update}.  However if [g] is being used by other gists
+that you use, these references still point to the old
+metadata. To update these occurences you can use the
+{!Typegist.Type.Gist.rebind} function on a gist before you use it.
+
+The example below redefines the generic pretty printer of the
+{!Typegist.Type.Gist.uchar} gist to always output Unicode characters with the
+Unicode code point notation.
+{[
+let uchar =
+  let pp_uchar ppf u = Format.fprintf ppf "U+%04X" (Uchar.to_int u) in
+  let meta = Type.Gist.meta Type.Gist.uchar in
+  let meta = Fun.Generic.Fmt.add pp_uchar meta in
+  Type.Gist.update ~meta Type.Gist.uchar
+
+let pp g ppf v = Fun.Generic.pp (Type.Gist.rebind uchar g) v
+]}
+
+Two things to note however:
+
+{ul
+{- It is better to cache rebind operation or redefine top-level
+   rebound gist values for the gists you end up using.}
+{- Occurences of {!Typegist.Type.Gist.uchar} may have been redefined
+   with a different identity with {!Typegist.Type.Gist.of_gist}. These
+   redefinitions identify differently so they are not affected by our
+   rebind operation. See {{!generic_funs_override}this example}
+   where a new identity is purposedly created.}}
+
+{2:tips_text Use text gists to prevent byte escapes in text output}
+
+If you notice that in generic functions that produce textual output your
+text strings are escaped (e.g. hex or base64 encoded), you are likely using
+the wrong gist for your strings. While OCaml uses [string] or [bytes] for
+both sequences of bytes and UTF-8 encoded text, type gists do make the
+difference. For text data use these gists:
+
+{ul
+{- For a [string] value holding text use {!Typegist.Type.Gist.utf_8_string}.}
+{- For a [bytes] value holding text use {!Typegist.Type.Gist.utf_8_bytes}.}}
+
+See for example this {{!blueprints_records}blueprint}.
+
+{1:blueprints Gist blueprints}
+
+{2:blueprints_tuples Tuples}
+
+Arbitrary tuples are described by a product of unnamed fields. This
+example shows how to describe a 3 dimensional tuple. You start with
+{!Typegist.Type.Gist.tuple} to which you give the tuple constructor
+and follow with {!Typegist.Type.Gist.comp}, in order, to describe the type
+of the tuple components and their accessors.
+
+{[
+type point = float * float * float
+let point_gist =
+  Type.Gist.tuple ~name:"M.point" (fun x y z -> x, y, z)
+  |> Type.Gist.comp Type.Gist.float (fun (x, _, _) -> x)
+  |> Type.Gist.comp Type.Gist.float (fun (_, y, _) -> y)
+  |> Type.Gist.comp Type.Gist.float (fun (_, _, z) -> z)
+  |> Type.Gist.finish
+]}
+
+A couple of predefined combinators are provided for low dimension tuples. For
+example the above could have been written:
+{[
+let point_gist = Type.Gist.(t3 ~name:"M.point" float float float)
+]}
+
+The [name] argument is optional for tuples. For example if
+you describe an unnamed tuple that is part of a larger definition:
+{[
+type span = string * (int * int)
+let span_gist = Type.Gist.(t2 ~name:"M.span" binary_string (t2 int int))
+]}
+
+{2:blueprints_records Records}
+
+Records are described by a product of named fields. This example shows
+how to describe a simple record. You start with
+{!Typegist.Type.Gist.record} to which you give a type name and a record
+constructor and follow with {!Typegist.Type.Gist.field}, in order, to
+describe the fields of the record and their accessors.
 
 {[
 module Person = struct
@@ -19,270 +153,593 @@ module Person = struct
   let make name age = { name; age }
   let name p = p.name
   let age p = p.age
-
-  open Typegist
-
   let gist =
     Type.Gist.record "Person.t" make
-    |> Type.Gist.field "name" Type.Gist.string_as_utf_8 name
+    |> Type.Gist.field "name" Type.Gist.utf_8_string name
     |> Type.Gist.field "age" Type.Gist.(option int) age
-    |> Type.Gist.finish_record
-
-    let name = Type.Gist.(field "name" string_as_utf_8) name in
-    let age = Type.Gist.(field "age" (option int)) age in
-    Type.Gist.(record "person" @@ ctor make * name * age)
-
-  let pp = Fun.Generic.pp gist
+    |> Type.Gist.finish
 end
 ]}
 
-{1:describing_variants Describing variants}
+If one of your field is mutable specify a [set] function in
+{!Typegist.Type.Gist.field}.
 
-An OCaml variant is {{!Typegist.Type.Gist.variant_ops}described} by a
-list of cases and a function that indicates how to select the case for
-a value.
+{2:blueprints_variants Variants}
 
-{2:enumerations Simple variant}
+{3:blueprints_standard_variants Standard variants}
 
-A blueprint for an enumeration.
+Standard variants are described by these functions:
+
+{ul
+{- {!Typegist.Type.Gist.option} for [option] types.}
+{- {!Typegist.Type.Gist.either} for [Either.t] types.}
+{- {!Typegist.Type.Gist.result} for [result] types.}
+{- {!Typegist.Type.Gist.list} for [list] types.}}
+
+For example:
 
 {[
-module Status = struct
-  type t = Todo | Done | Cancelled
-
-  open Typegist
-
-  let gist =
-    let todo = Type.Gist.case0 "Status.Todo" Todo in
-    let done' = Type.Gist.case0 "Status.Done" Done in
-    let cancelled = Type.Gist.case0 "Status.Cancelled" Done in
-    let project = function
-    | Todo -> todo | Done -> done' | Cancelled -> cancelled
-    in
-    let cases = [todo; done'; cancelled] in
-    Type.Gist.variant "Status.t" project cases
-
-  let pp = Fun.Generic.pp gist
-end
+type age = int option
+let age = Type.Gist.option ~name:"M.age" Type.Gist.int
 ]}
 
-{2:simple Simple variants}
+The [name] argument is optional for standard variants. For example if
+you describe unnamed types that are part of a larger definition. For
+example see the [age] field in {{!blueprints_records}this description}.
 
-{2:variants_special Special cases}
+{3:blueprints_enumartions Enumerations}
 
-{2:gatds GADT witness hiding}
-
-For GADTs we need to cheat a little bit. When trying to describe it as
-a variant we can't type the case list since each case has another type
-witness. We can however define an existential for the GADT and
-describe it as if it was a regular variant.
+For variants which are just enumerations the
+{!Typegist.Type.Gist.variant_of_enum} shortcut is provided:
 
 {[
-module M = struct
-  type 'a t =
-  | Int : int t
-  | Float : float t
-  | Pair : 'a t * 'b t -> ('a * 'b) t
-
-  type e = E : 'a t -> e (* We need to hide the witness. *)
-
-  let type_gist : e Type.Gist.t =
-    let rec g = lazy begin
-      let g = Type.Gist.rec' g in
-      let int_case = Type.Gist.(case "Int" @@ ctor (E Int)) in
-      let float_case = Type.Gist.(case "Float" @@ ctor (E Float)) in
-      let pair_ctor (E a) (E b) = E (Pair (a, b)) in
-      let pair_lproj = function E Pair (a, _) -> E a | _ -> assert false in
-      let pair_rproj = function E Pair (_, b) -> E b | _ -> assert false in
-      let pair_ldim = Type.Gist.dim g pair_lproj in
-      let pair_rdim = Type.Gist.dim g pair_rproj in
-      let pair_prod = Type.Gist.(ctor pair_ctor * pair_ldim * pair_rdim) in
-      let pair_case = Type.Gist.case "Pair" pair_prod in
-      let t_proj : type a. e -> e Type.Gist.Variant.case = function
-      | E Int -> int_case | E Float -> float_case | E (Pair _) -> pair_case
-      in
-      let cases = [int_case; float_case; pair_case] in
-      Type.Gist.variant "_ M.t" t_proj cases
-    end
-    in
-    Lazy.force g
-end
+type status = Todo | Done | Cancelled
+let status_enum = ["Todo", Todo; "Done", Done; "Cancelled", Cancelled]
+let status_gist = Type.Gist.enum ~name:"M.status" status_enum
 ]}
 
-{1:variants Describing recursive types}
+The [name] argument should only be omitted if you describe unnamed
+polymorphic variants that are part of a larger definition.
 
-This example shows variants and recursive types via a simple binary
-tree.
+{3:blueprints_generic_variants Generic variants}
+
+Generic variants are described by {!Typegist.Type.Gist.variant} which
+takes a list of case type descriptions and a function that indicates which
+case to use in the list for a value of the type.
+
+A case type is described by starting with {!Typegist.Type.Gist.case} to which
+you give the constructor name and a case value constructor and follow with
+{!Typegist.Type.Gist.comp} (or {!Typegist.Type.Gist.field} for inline
+records), in order, to describe the fields of the case.
 
 {[
-module Btree : sig
-  type 'a t = Empty | Node of 'a t * 'a * 'a t
-  val type_gist : 'a Type.Gist.t -> 'a t Type.Gist.t
-  val pp : 'a Type.Gist.t -> Format.formatter -> 'a t -> unit
-end = struct
-  type 'a t = Empty | Node of 'a t * 'a * 'a t
-  let type_gist gel =
-    let rec g = lazy begin
-      let g = Type.Gist.rec' g in
-      let empty_case = Type.Gist.(case "Empty" @@ ctor Empty) in
-      let node_ctor l v r = Node (l, v, r) in
-      let node_lproj = function Node (l, _, _) -> l | _ -> assert false in
-      let node_eproj = function Node (_, v, _) -> v | _ -> assert false in
-      let node_rproj = function Node (_, _, r) -> r | _ -> assert false in
-      let node_ldim = Type.Gist.(dim g node_lproj) in
-      let node_edim = Type.Gist.(dim gel node_eproj) in
-      let node_rdim = Type.Gist.(dim g node_rproj) in
-      let node_case =
-        Type.Gist.case "Node" @@
-        Type.Gist.(ctor node_ctor * node_ldim * node_edim * node_rdim)
-      in
-      let t_proj = function Empty -> empty_case | Node _ -> node_case in
-      Type.Gist.variant "Btree.t" t_proj [empty_case; node_case]
-    end
-    in
-    Lazy.force g
-
-  let pp elt = Fun.Generic.pp (type_gist elt)
-end
+type operation = Create | Delete of { id : int }
+let operation_gist =
+  let create = Type.Gist.case "Create" Create |> Type.Gist.finish in
+  let delete =
+    let make id = Delete { id } in
+    let id = function Delete { id } -> id | _ -> assert false in
+    Type.Gist.case "Delete" make
+    |> Type.Gist.field "id" Type.Gist.int id
+    |> Type.Gist.finish
+  in
+  let case_index = function Create -> 0 | Delete _ -> 1 in
+  Type.Gist.variant ~name:"M.operation" [create; delete] ~case_index
 ]}
 
-{2:mutual Mutual recursion}
+The [name] argument should only be omitted if you describe unnamed
+polymorphic variants that are part of a larger definition.
 
-Arbitrary mutual recursion is easily supported. Shown here between two types.
+{3:blueprints_variant_recursion Generic variants with recursion}
+
+If the variant is recursive use {!Typegist.Type.Gist.rec'} as
+mentioned in the {{!blueprints_recursive_types}section on recursive types}.
+For example:
+{[
+type nat = Zero | Succ of nat
+let nat_gist =
+  let rec g = lazy begin
+    let nat = Type.Gist.rec' g in
+    let zero = Type.Gist.case "Zero" Zero |> Type.Gist.finish in
+    let succ =
+      let make n = Succ n in
+      let get = function Succ n -> n | _ -> assert false in
+      Type.Gist.case "Succ" make
+      |> Type.Gist.comp nat get
+      |> Type.Gist.finish
+    in
+    let case_index = function Zero -> 0 | Succ _ -> 1 in
+    Type.Gist.variant ~name:"M.nat" [zero; succ] ~case_index
+  end
+  in
+  Lazy.force g
+]}
+
+{3:blueprints_gatds GADT witness hiding}
+
+If the variant is a GADT, we need to cheat a little bit. When trying
+to describe it as a variant we can't type the case list since each
+case has another type witness. We can however define an existential
+for the GADT and describe it as if it was a regular variant. The
+result may not be very useful on input processors but it can be used
+with pretty printing or equality generic functions.
 
 {[
-let module M = struct
-  type one = One | To_two of two
-  and two = Two | To_one of one
+type 'a number =
+| Int : int -> int number
+| Float : float -> float number
 
-  let type_gist_one, type_gist_two =
-    let rec gone = lazy begin
-      let gtwo = Type.Gist.rec' gtwo in
-      let one_case = Type.Gist.(case "One" @@ ctor One) in
-      let to_two_ctor t = To_two t in
-      let to_two_proj = function To_two v -> v | _ -> assert false in
-      let to_two_dim = Type.Gist.(dim gtwo to_two_proj) in
-      let to_two_prod = Type.Gist.(ctor to_two_ctor * to_two_dim) in
-      let to_two_case = Type.Gist.case "To_two" to_two_prod in
-      let one_proj = function One -> one_case | To_two _ -> to_two_case in
-      Type.Gist.variant "M.one" one_proj [one_case; to_two_case]
-      end
-    and gtwo = lazy begin
-      let gone = Type.Gist.rec' gone in
-      let two_case = Type.Gist.(case "Two" @@ ctor Two) in
-      let to_one_ctor t = To_one t in
-      let to_one_proj = function To_one v -> v | _ -> assert false in
-      let to_one_dim = Type.Gist.(dim gone to_one_proj) in
-      let to_one_prod = Type.Gist.(ctor to_one_ctor * to_one_dim) in
-      let to_one_case = Type.Gist.(case "To_one" @@ to_one_prod) in
-      let two_proj = function Two -> two_case | To_one _ -> to_one_case in
-      Type.Gist.variant "M.two" two_proj [two_case; to_one_case]
-    end
-    in
-    (Lazy.force gone), (Lazy.force gtwo)
-end
+type e_number = E : 'a number -> e_number
+
+let number_gist =
+  let int =
+    let make i = E (Int i) in
+    let get = function E (Int i) -> i | _ -> assert false in
+    Type.Gist.case "Int" make
+    |> Type.Gist.comp Type.Gist.int get
+    |> Type.Gist.finish
+  in
+  let float =
+    let make f = E (Float f) in
+    let get = function E (Float f) -> f | _ -> assert false in
+    Type.Gist.case "Float" make
+    |> Type.Gist.comp Type.Gist.float get
+    |> Type.Gist.finish
+  in
+  let case_index = function E (Int _) -> 0 | E (Float _) -> 1 in
+  Type.Gist.variant ~name:"_ number" [int; float] ~case_index
 ]}
 
-{1:describing_parametric_types Describing parametric types}
+{2:blueprints_array_likes Array likes}
 
-{1:versioning Abstract types and versioning}
+{3:blueprints_strings Bytes and strings}
 
-This example shows records and abstract type public representation versioning.
+The [bytes] and [string] types are described with:
+{ul
+{- {!Typegist.Type.Gist.bytes} and {!Typegist.Type.Gist.binary_string} for
+   binary data.}
+{- {!Typegist.Type.Gist.utf_8_bytes} and {!Typegist.Type.Gist.utf_8_string}
+   for Unicode text.}}
+
+The distinction between binary and textual data is important to make since
+processors may need to know the difference, see this {{!tips_text}cookbook
+entry}.
+
+If you want to rename [string] or [bytes] or add more metadata to
+tweak the outputs of a gist processor use {!Typegist.Type.Gist.update}
+or {!Typegist.Type.Gist.of_gist} depending on
+{{!tips_metadata_update}the situation}. For example this declares a
+new identity for [string] by using [Type.Gist.of_gist] and tweaks the output of
+the {!Typegist.Fun.Generic.val-pp} generic function on these values:
 
 {[
-module Person : sig
-  type t
-  val v : string -> string -> string option -> t
-  val name : t -> string
-  val email : t -> string
-  val phone : t -> string option
-  val gist : t Type.Gist.t
-  val pp : Format.formatter -> t -> unit
-end = struct
-  type t = { name : string; email : string; phone : string option }
-  let v name email phone = { name; email; phone }
-  let name p = p.name
-  let email p = p.email
-  let phone p = p.phone
-  let type_gist =
-    let name = Type.Gist.(field "name" string_as_utf_8 name) in
-    let email = Type.Gist.(field "email" string_as_utf_8 email) in
-    let phone = Type.Gist.(field "phone" (option string_as_utf_8) phone) in
-    let repr_v0 = (* First version had no phone numbers *)
-      let to_v1 name email = { name; email; phone = None } in
-      let g = Type.Gist.(record "person" @@ ctor to_v1 * name * email) in
-      Type.Gist.Abstract.repr ~version:"v0" g Fun.id Fun.id
-    in
-    let repr_v1 = (* Added phone numbers *)
-      let g = Type.Gist.(record "person" @@ ctor v * name * email * phone) in
-      Type.Gist.Abstract.repr ~version:"v1" g Fun.id Fun.id
-    in
-    Type.Gist.abstract "person" ~reprs:[repr_v1; repr_v0]
-
-  let pp = Fun.Generic.pp type_gist
-end
+type username = string
+let username_gist =
+  let pp_bold ppf s = Format.fprintf ppf "@<0>\x1B[1m%s@<0>\x1B[0m" s in
+  let meta = Type.Gist.Meta.empty |> Fun.Generic.Fmt.add pp_bold in
+  Type.Gist.of_gist ~name:"M.username" ~meta Type.Gist.utf_8_string
 ]}
 
-{1:writing_generic Writing a generic function}
+{3:blueprints_arrays Arrays and bigarrays}
 
-The following is a function template for processing two values by
-following their gists.
-
-Since the types need to be spelled out because of the GADT it is usually a
-good idea to define a type for the function you are defining. That's the
-purpose of the ['a t] below which takes two values and returns [unit]
-you likely want to adjust that.
-
-The implementation of the functions in {!Typegist.Fun.Generic} can
-also serve as simple examples.
+Given a gist representing the type for elements, an array type is
+constructed with {!Typegist.Type.Gist.array} or
+{!Typegist.Type.Gist.iarray}.
 
 {[
-module Generic_binary_fun = struct
-  type 'a t = 'a -> 'a -> unit
-
-  let rec fun_scalar : type a. a Type.Gist.scalar -> a t = fun s v0 v1 ->
-    failwith "TODO"
-
-  and fun_arraylike :
-    type elt arr. (elt, arr) Type.Gist.arraylike -> arr t = fun a v0 v1 ->
-    failwith "TODO"
-
-  and fun_maplike :
-    type k v m. (k, v, m) Type.Gist.maplike -> m t = fun m v0 v1 ->
-    failwith "TODO"
-
-  and fun_product : type p. p Type.Gist.product -> p t = fun p v0 v1 ->
-    failwith "TODO"
-
-  and fun_record : type r. r Type.Gist.record -> r t = fun r v0 v1 ->
-    failwith "TODO"
-
-  and fun_sum : type s. s Type.Gist.sum -> s t = fun s v0 v1 ->
-    failwith "TODO"
-
-  and fun_func :
-    type d r. (d, r) Type.Gist.func -> (d -> r) t = fun f v0 v1 ->
-    failwith "TODO"
-
-  and fun_abstract :
-    type a. a Type.Gist.abstract -> a t = fun a v0 v1 ->
-    failwith "TODO"
-
-  and fun_gist : type a. a Type.Gist.t -> a t = fun g v0 v1 -> match g with
-  | Scalar s -> fun_scalar s v0 v1
-  | Arraylike a -> fun_arraylike a v0 v1
-  | Maplike m -> fun_maplike m v0 v1
-  | Product p -> fun_product p v0 v1
-  | Record r -> fun_record r v0 v1
-  | Sum s -> fun_sum s v0 v1
-  | Func f -> fun_func f v0 v1
-  | Abstract a -> fun_abstract a v0 v1
-  | Lazy (_, g) -> fun_gist g (Lazy.force v0) (Lazy.force v1)
-  | Ref (_, g) -> fun_gist g !v0 !v1
-  | Rec g -> fun_gist (Lazy.force g) v0 v1
-end
+type samples = int array
+let samples_gist = Type.Gist.array ~name:"samples" Type.Gist.int
 ]}
 
-{2:meta Defining processing metadata}
+The [name] argument is optional for array types. For example you
+if you describe unnamed arrays types that are part of a larger definition.
 
-If your generic function needs additional metadata.
+Linear bigarrays types are described with
+{!Typegist.Type.Gist.bigarray1} and
+{!Typegist.Type.Gist.bigbytes}.
+
+Combinators for bigarrays of other dimensions are provided but these
+are expressed as as a {!Typegist.Type.Gist.view} over the
+{!Typegist.Type.Gist.bigarray1} gist. See:
+{ul
+{- {!Typegist.Type.Gist.bigarray2}}
+{- {!Typegist.Type.Gist.bigarray3}}
+{- {!Typegist.Type.Gist.bigarraygen}}}
+
+{3:blueprints_array_modules Array modules}
+
+Array modules provide a generic representation of linear
+arrays. Information about the type is provided with a module that
+implements the {!Typegist.Type.Gist.Array_like.S} signature and that
+you can inject in the representation with the
+{!Typegist.Type.Gist.array_module} function.
+
+For example {!Typegist.Type.Gist.floatarray},
+{!Typegist.Type.Gist.dynarray} or {!Typegist.Type.Gist.weak} are
+defined as array modules.
+
+{2:blueprints_map_likes Map likes}
+
+Standard library {!Hashtbl.t} and {!Map.S.t} types can be described by
+{!Typegist.Type.Gist.hashtbl} and {!Typegist.Type.Gist.map}. For example:
+{[
+module String_map = Map.Make (String)
+let int_string_map_gist =
+  Type.Gist.(map "String_map.t" (module String_map) utf_8_string int)
+]}
+
+If you have your own hash tables or persistent maps you can inject
+them in the representation {!Typegist.Type.Gist.hashtbl_module} and
+{!Typegist.Type.Gist.map_module} functions by describing them with
+corresponding  {!Typegist.Type.Gist.Map_like.HASHTBL} and
+{!Typegist.Type.Gist.Map_like.MAP} modules.
+
+{2:blueprints_cell_likes Cell likes}
+
+Cell likes structure are described with:
+
+{ul
+{- {!Typegist.Type.Gist.lazy'} for lazy types.}
+{- {!Typegist.Type.Gist.ref} for reference types.}
+{- {!Typegist.Type.Gist.atomic} for atomic types.}
+{- {!Typegist.Type.Gist.cell_module} for injecting arbitrary cell types
+   in the representation via the {!Typegist.Type.Gist.Cell_like.S} signature.}}
+
+For example:
+
+{[
+type epoch = int Atomic.t
+let epoch_gist = Type.Gist.atomic ~name:"M.epoch" Type.Gist.int
+]}
+
+The [name] argument is optional for cell like types. For example if
+you describe unnamed types that are part of a larger definition.
+
+{2:blueprints_functions Functions}
+
+Function types are described with {!Typegist.Type.Gist.func}:
+{[
+type predicate = char -> bool
+let predicate_gist = Type.Gist.(func ~name:"predicate" char bool)
+]}
+
+{2:blueprints_abstract_types Abstract types and versioning}
+
+There is nothing particular about providing a type gist for an
+abstract type. For example if you are going serialize its values you
+have to reveal a public description (which may differ from its
+internal description). So you can use any type gist value that
+you find fit to describe it, expose it in the module interface and
+keep your type abstract for the rest of the code base.
+
+However one good aspect of abstract types is that with care you can
+change their representation without breaking the rest of the code
+base. So typegist takes the opportunity of abstract types to devise a
+scheme that allows gist processors to help you deal with
+representation changes. An abstract type can be described as a list of
+public and versioned representations with
+{!Typegist.Type.Gist.abstract}.
+
+Taking the serialization example again, if you serialize values and
+then update your representation you need to deal with older values and
+migrate them to the new representation or label them as being in an older
+format. The simple scheme provided by {!Typegist.Type.Gist.abstract} provides
+flexiblity in how you want to manage this. We show two different ways
+starting with the followin [v1] representation of a person:
+
+{[
+type person = string
+let person_gist_v1 = Type.Gist.(of_gist ~name:"M.person" utf_8_string)
+let person_gist =
+  let v1 = Type.Gist.Abstract.Version.make ~name:"v1" person_gist_v1 in
+  Type.Gist.abstract "M.person" [v1]
+]}
+
+Now we realize that we want to store the name and last name separately
+and refine our data model to a pair of strings.
+
+In the first scenario we are no longer interested in dealing with the
+old data model so we simply migrate the old representation to the new
+one with a {{!blueprints_views}view} (note [inject] is not needed if
+you are no longer interested in serializing the old data model).
+
+{[
+type person = string * string
+let person_gist_v2 = Type.Gist.(t2 ~name:"M.person" utf_8_string utf_8_string)
+
+let person_gist_v1 =
+  let inject (last, first) = String.concat " " [last; first] in
+  let project n = match String.split_first ~sep:" " n with
+  | None -> ("", n) | Some (last, first) -> last, first
+  in
+  Type.Gist.view ~inject ~project @@
+  Type.Gist.(of_gist ~name:"M.person" utf_8_string)
+
+let person_gist =
+  let v1 = Type.Gist.Abstract.Version.make ~name:"v1" person_gist_v1 in
+  let v2 = Type.Gist.Abstract.Version.make ~name:"v2" person_gist_v2 in
+  Type.Gist.abstract "M.person" [v1; v2]
+]}
+
+In the second scenario we need to deal with clients that only
+know about the first representation. So we still want to deal
+with the two versions side by side, here is one way of doing it
+(it can of course be made more subtle).
+
+{[
+type person_v1 = string
+type person_v2 = string * string
+type person = V1 of person_v1 | V2 of person_v2
+
+let person_gist_v1 =
+  let inject = function V1 v1 -> v1 | _ -> assert false in
+  let project v1 = V1 v1 in
+  Type.Gist.view ~inject ~project @@
+  Type.Gist.(of_gist ~name:"M.person" utf_8_string)
+
+let person_gist_v2 =
+  let inject = function V2 v2 -> v2 | _ -> assert false in
+  let project v2 = V2 v2 in
+  Type.Gist.view ~inject ~project @@
+  Type.Gist.(t2 ~name:"M.person" utf_8_string utf_8_string)
+
+let person_gist =
+  let v1 = Type.Gist.Abstract.Version.make ~name:"v1" person_gist_v1 in
+  let v2 = Type.Gist.Abstract.Version.make ~name:"v2" person_gist_v2 in
+  let version_index = function V1 _ -> 0 | V2 _ -> 1 in
+  Type.Gist.abstract "M.person" [v1; v2] ~version_index
+]}
+
+The abstract type now carries more than one version of the data model
+and the [version_index] function indicates which version to use given
+a value of the type.
+
+{2:blueprints_views Views}
+
+Types that have no obvious representation in gists can be described
+by viewing them as another type with {!Typegist.Type.Gist.view}.
+
+For example to represent standard library queues in
+{!Typegist.Type.Gist.queue} we view them lists:
+{[
+let queue_gist elt =
+  let inject q = List.rev (Queue.fold (Fun.flip List.cons) [] q) in
+  let project els =
+    let q = Queue.create () in
+    List.iter (Fun.flip Queue.add q) els; q
+  in
+  let name = Type.Gist.Name.make_applied [V elt] "Queue.t" in
+  Type.Gist.view ~name ~inject ~project (Type.Gist.list elt)
+]}
+
+{2:blueprints_recursive_types Recursive types}
+
+Recursive types are supported by using {!Typegist.Type.Gist.rec'} and
+the following general pattern:
+
+{[
+let g =
+  let rec g = lazy begin
+    let g = Typegist.Type.Gist.rec' g in
+    … (* Use g to represent the gist being defined *)
+  end
+  in
+  Lazy.force g
+]}
+
+{{!blueprints_variant_recursion}This recursive variant} is a simple example.
+
+The pattern generalizes to mutually recursive types. For example:
+
+{[
+type even = Zero | Succ_odd of odd
+and odd = Succ_even of even
+
+let even_gist, odd_gist =
+  let rec even_gist = lazy begin
+    let odd_gist = Type.Gist.rec' odd_gist in
+    let zero = Type.Gist.case "Zero" Zero |> Type.Gist.finish in
+    let succ_odd =
+      let make odd = Succ_odd odd in
+      let get = function Succ_odd odd -> odd | _ -> assert false in
+      Type.Gist.case "Succ_odd" make
+      |> Type.Gist.comp odd_gist get
+      |> Type.Gist.finish
+    in
+    let case_index = function Zero -> 0 | Succ_odd _ -> 1 in
+    Type.Gist.variant ~name:"M.even" [zero; succ_odd] ~case_index
+  end
+  and odd_gist = lazy begin
+    let even_gist = Type.Gist.rec' even_gist in
+    let succ_even =
+      let make even = Succ_even even in
+      let get = function Succ_even even -> even in
+      Type.Gist.case "Succ_even" make
+      |> Type.Gist.comp even_gist get
+      |> Type.Gist.finish
+    in
+    Type.Gist.variant ~name:"M.odd" [succ_even] ~case_index:(Fun.const 0)
+  end
+  in
+  (Lazy.force even_gist), (Lazy.force odd_gist)
+]}
+
+{2:blueprints_polymorphic_types Polymorphic types}
+
+Polymorphic types only exist in instantiated (closed) form in gist
+values. To represent an n-ary polymorphic type you define a function
+of n gist arguments to a gist value. See for example
+{!Typegist.Type.Gist.list} or {!Typegist.Type.Gist.result}.
+
+The following example shows how to do describe a polymorphic binary tree.
+{[
+type 'a tree = Empty | Node of 'a tree * 'a * 'a tree
+let tree_gist : 'a Type.Gist.t -> 'a tree Type.Gist.t = fun elt ->
+  let rec tree = lazy begin
+    let tree = Type.Gist.rec' tree in
+    let empty = Type.Gist.case "Empty" Empty |> Type.Gist.finish in
+    let node =
+      let make l v r = Node (l, v, r) in
+      let left  = function Node (l, _, _) -> l | _ -> assert false in
+      let value = function Node (_, v, _) -> v | _ -> assert false in
+      let right = function Node (_, _, r) -> r | _ -> assert false in
+      Type.Gist.case "Node" make
+      |> Type.Gist.comp tree left
+      |> Type.Gist.comp elt value
+      |> Type.Gist.comp tree right
+      |> Type.Gist.finish
+    in
+    let case_index = function Empty -> 0 | Node _ -> 1 in
+    let name = Type.Gist.Name.make_applied [V elt] "M.tree" in
+    Type.Gist.variant ~name [empty; node] ~case_index
+  end
+  in
+  Lazy.force tree
+]}
+
+Usually we name the gist resulting from the function application with
+the names of the gist arguments applied to the polymorphic type, for
+example [(int * int) M.tree]. The function
+{!Typegist.Type.Gist.Name.make_applied} does that for you.
+
+{1:generic_funs Generic functions}
+
+{2:generic_funs_override Overriding a generic function}
+
+If you are unhappy about the result of a generic function on your gist
+and that the generic function follows the
+{{!convention_generic_fun_metadata} generic function metadata
+convention}, it is possible to override the generic function with your
+own implementation for the gist.
+
+For example the following overrides the {!Typegist.Fun.Generic.val-pp} function
+to avoid printing out private information:
+
+{[
+type private_info = string
+let private_info_gist =
+  let pp ppf s = Format.pp_print_string ppf "<redacted for privacy>" in
+  let name = "M.private_info" in
+  let meta = Type.Gist.meta Type.Gist.utf_8_string in
+  let meta = Fun.Generic.Fmt.add pp meta in
+  Type.Gist.of_gist ~name ~meta Type.Gist.utf_8_string
+]}
+
+We used {!Typegist.Type.Gist.of_gist} so we get a gist whose identity
+is separate from {!Typegist.Type.Gist.utf_8_string} for our
+[private_info] type. This is likely a good idea in this case: an
+attempt at {!Typegist.Type.Gist.rebind}ing UTF-8 strings with a new
+printer will not affect this one.
+
+{2:generic_funs_template Writing a generic function}
+
+The following is a function template for processing two values of the
+same type by following their gists.
+
+Since the function signatures need to be spelled out because of the GADT it
+is usually a good idea to define a type for the function you are defining.
+That's the purpose of the ['a op] type below which in the template takes two
+values and returns [unit] – you likely want to adjust that.
+
+The template implements the {{!convention_generic_fun_metadata}generic
+function metadata} convention to allow gists to override the generic
+function with the [Op] metadata key. It also supports the
+{!Typegist.Type.Gist.Meta.Ignore} key to ignore parts of the representation in
+the same way ignoring works for example the {!Typegist.Fun.Generic.val-equal}
+generic function. These things can of course be deleted if you don't want to
+support them.
+
+{[
+type 'a op = 'a -> 'a -> unit
+
+module Op = struct
+  type 'a t = 'a op
+  let ignore : 'a op = fun _ _ -> () (* if you have a way to express that *)
+  module V = struct type nonrec ('a, 'b) t = 'b t end
+  include Typegist__gist.Meta.Key (V)
+end
+
+let rec op_fields : type p a. (p, a) Type.Gist.Product.fields -> p op =
+fun fs v0 v1 -> match fs with
+| Ctor _ -> ()
+| App (fs, f) ->
+    op_fields fs v0 v1;
+    let v0 = Type.Gist.Field.get f v0 in
+    let v1 = Type.Gist.Field.get f v1 in
+    let meta = Type.Gist.Field.meta f in
+    match Op.find meta with
+    | Some op -> op v0 v1
+    | None ->
+        match Type.Gist.Meta.Ignore.find meta with
+        | Some true -> ()
+        | _ -> op (Type.Gist.Field.gist f) v0 v1
+
+and op_scalar : type s. s Type.Gist.Scalar.t -> s op =
+fun s v0 v1 -> failwith "TODO"
+
+and op_tuple : type t. t Type.Gist.Tuple.t -> t op =
+fun t v0 v1 -> failwith "TODO"
+
+and op_record : type r. r Type.Gist.Record.t -> r op =
+fun r v0 v1 -> failwith "TODO"
+
+and op_variant_like : type v. v Type.Gist.Variant_like.t -> v op =
+fun v v0 v1 -> failwith "TODO"
+
+and op_array_like :
+type elt array. (elt, array) Type.Gist.Array_like.t -> array op =
+fun a v0 v1 -> failwith "TODO"
+
+and op_map_like :
+type k v map. (k, v, map) Type.Gist.Map_like.t -> map op =
+fun m v0 v1 -> failwith "TODO"
+
+and op_cell_like : type a cell. (a, cell) Type.Gist.Cell_like.t -> cell op =
+fun c v0 v1 -> failwith "TODO"
+
+and op_func : type a b. (a, b) Type.Gist.Func.t -> (a -> b) op =
+fun f v0 v1 -> failwith "TODO"
+
+and op_abstract : type a. a Type.Gist.Abstract.t -> a op =
+fun a v0 v1 -> failwith "TODO"
+
+and op_view : type a b. (a, b) Type.Gist.View.t -> a op =
+fun w v0 v1 -> failwith "TODO"
+
+and op : type a. a Type.Gist.t -> a op =
+fun g v0 v1 ->
+  let meta = Type.Gist.meta g in
+  match Op.find meta with
+  | Some op -> op v0 v1
+  | None ->
+      match Type.Gist.Meta.Ignore.find meta with
+      | Some true -> ()
+      | _ ->
+          match Type.Gist.expr g with
+          | Scalar s -> op_scalar s v0 v1
+          | Tuple t -> op_tuple t v0 v1
+          | Record r -> op_record r v0 v1
+          | Variant_like v -> op_variant_like v v0 v1
+          | Array_like a -> op_array_like a v0 v1
+          | Map_like m -> op_map_like m v0 v1
+          | Cell_like c -> op_cell_like c v0 v1
+          | Func f -> op_func f v0 v1
+          | Abstract a -> op_abstract a v0 v1
+          | View w -> op_view w v0 v1
+          | Rec (lazy g) -> op g v0 v1
+]}
+
+If you are not interested in some of the specialization of the
+representation these functions are useful convert them to a generic one:
+
+{ul
+{- {!Typegist.Type.Gist.Variant_like.to_variant}}
+{- {!Typegist.Type.Gist.Array_like.to_module}}
+{- {!Typegist.Type.Gist.Cell_like.to_module}}}
+
+Besides the [op_tuple] and [op_record] functions often simply call [op_fields]
+so you may want to delete these and call [op_fields] directly in [op] in the
+appropriate cases.
+
+If you want to see concrete examples have a look at the implementation of
+the functions of {!Typegist.Fun.Generic} which are reasonably simple.

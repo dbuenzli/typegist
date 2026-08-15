@@ -1,24 +1,17 @@
 typegist — Represent the essence of OCaml types as values
 =========================================================
-%%VERSION%%
 
-Typegist represents the essence of OCaml types as values. This dynamic
-type representation can be used to devise generic type-indexed
-functions – value printers, parsers, differs, generators, editors,
-ffi, etc.
+Typegist represents the essence of OCaml types as values.
 
-The mechanism is flexible: more than one representation can be provided
-for a single type and any accessible type can be described up to the
-limits defined by its public interface. Abstract types can expose
-multiple versioned public representations (or none) which allows to
-interface with older representations your program may be subjected to.
+This dynamic type representation can be used to devise generic
+type-indexed functions – value serializers, generators, differs,
+editors, FFI glue, etc. Any accessible type can be described up to the
+limits defined by its public interface.
 
-Typegist aims at providing an ergonomic interface for both producers
-and consumers of the representation. As such it does not try to
-capture the full complexity of OCaml's type definition language. It
-focuses on a core structural type representation decorated with
-type-indexed existential metadata for customizing and extending the
-behaviour of generic functions.
+Typegist does not model OCaml's type language in full detail. It
+focuses on a core structural subset decorated with typed-indexed
+metadata to provide an ergonomic interface for both producers and
+processors of the representation.
 
 Typegist is distributed under the ISC license. It has no dependencies. 
 
@@ -43,6 +36,13 @@ than on the issue tracker.
 [doc]: https://erratique.ch/software/typegist/doc
 [ocaml-forum]: https://discuss.ocaml.org/
 
+
+## Acknowledgements 
+
+A grant from the [OCaml Software Foundation] helped to bring the first
+public release of `typegist`.
+
+[OCaml Software Foundation]: http://ocaml-sf.org/
 
 
 
