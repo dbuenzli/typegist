@@ -425,7 +425,7 @@ then update your representation you need to deal with older values and
 migrate them to the new representation or label them as being in an older
 format. The simple scheme provided by {!Typegist.Type.Gist.abstract} provides
 flexiblity in how you want to manage this. We show two different ways
-starting with the followin [v1] representation of a person:
+starting with the following [v1] representation of a person:
 
 {[
 type person = string

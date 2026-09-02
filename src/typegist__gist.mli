@@ -819,13 +819,13 @@ val map_module :
 (** Cell likes for gist processors. *)
 module Cell_like : sig
 
-  (** {1:cell_modules Array modules} *)
+  (** {1:cell_modules Cell modules} *)
 
-  (** Array interface. *)
+  (** Cell interface. *)
   module type S = Typegist__repr.CELL
 
   type ('a, 'cell) module' = ('a, 'cell) Typegist__repr.cell_module
-  (** The type for array modules. *)
+  (** The type for cell modules. *)
 
   (** {1:cell_likes Cell likes} *)
 
